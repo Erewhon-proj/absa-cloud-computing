@@ -1,0 +1,9 @@
+# Dipendenze pesanti per l'inferenza reale (MODEL_MODE=pyabsa).
+# Installate solo se si builda l'immagine con --build-arg INSTALL_ML=true.
+# NB: PyABSA richiede Python 3.11. Il modello addestrato va montato come volume
+# (non incluso nell'immagine: ~450 MB).
+pyabsa>=2.4.2
+torch>=2.1,<3
+# transformers <5: dalla 5.x e' sparito tokenization_bert_fast, che PyABSA importa.
+transformers>=4.29,<5
+update-checker<1.0.0
