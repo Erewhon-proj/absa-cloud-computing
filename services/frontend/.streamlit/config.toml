@@ -1,0 +1,7 @@
+# Tema scuro "ardesia" del frontend (Streamlit lo legge all'avvio).
+[theme]
+base = "dark"
+primaryColor = "#5B8DEF"
+backgroundColor = "#141A24"
+secondaryBackgroundColor = "#1D2530"
+textColor = "#E8ECF3"
