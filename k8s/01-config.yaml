@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: absa-config
+  namespace: absa-cloud
+data:
+  QUEUE_NAME: "absa.reviews"
+  MODEL_MODE: "mock" # Impostare a "pyabsa" per usare il modello reale
+  API_URL: "http://api:8000"
+  BATCH_SIZE: "16"
+  FLUSH_TIMEOUT: "2.0"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: absa-secret
+  namespace: absa-cloud
+type: Opaque
+stringData:
+  POSTGRES_USER: "absa_app"
+  POSTGRES_PASSWORD: "absa_local_pw"
+  POSTGRES_DB: "absa"
+  DATABASE_URL: "postgresql://absa_app:absa_local_pw@postgres:5432/absa"
+  RABBITMQ_URL: "amqp://guest:guest@rabbitmq.absa-cloud.svc.cluster.local:5672/"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+  namespace: absa-cloud
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS reviews (
+        id           UUID PRIMARY KEY,
+        bank         TEXT,
+        text         TEXT NOT NULL,
+        status       TEXT NOT NULL DEFAULT 'pending',
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        processed_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS aspects (
+        id         BIGSERIAL PRIMARY KEY,
+        review_id  UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        aspect     TEXT NOT NULL,
+        sentiment  TEXT NOT NULL,
+        confidence REAL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_aspects_review ON aspects(review_id);
+    CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);

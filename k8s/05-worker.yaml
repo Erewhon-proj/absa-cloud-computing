@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: absa-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: absa-worker:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: absa-config
+            - secretRef:
+                name: absa-secret
+          # Configurazione per mock mode
+          env:
+            - name: MODEL_MODE
+              value: "mock"
+            # - name: ABSA_CHECKPOINT
+            #   value: "/models/checkpoint"
+          # volumeMounts:
+          #   - name: model-volume
+          #     mountPath: /models/checkpoint
+          #     readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      # volumes:
+      #   - name: model-volume
+      #     hostPath:
+      #       path: /Users/Dario/Library/CloudStorage/OneDrive-UniversitàdegliStudidiCatania/University/DMI/Magistrale/Cloud Computing/Project/absa-trustpilot-banking/models/best_models/lcf_atepc_custom_dataset_cdw_apcacc_89.41_apcf1_69.72_atef1_69.94
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: rabbitmq-trigger-auth
+  namespace: absa-cloud
+spec:
+  secretTargetRef:
+    - parameter: host
+      name: absa-secret
+      key: RABBITMQ_URL
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-keda-scaler
+  namespace: absa-cloud
+spec:
+  scaleTargetRef:
+    name: worker
+  pollingInterval: 10
+  cooldownPeriod: 30
+  minReplicaCount: 0  # KEDA scala a ZERO se la coda è vuota
+  maxReplicaCount: 5
+  triggers:
+    - type: rabbitmq
+      metadata:
+        queueName: "absa.reviews"
+        mode: "QueueLength"
+        value: "30"  # Aggiunge un nuovo pod ogni 30 messaggi in coda
+      authenticationRef:
+        name: rabbitmq-trigger-auth
