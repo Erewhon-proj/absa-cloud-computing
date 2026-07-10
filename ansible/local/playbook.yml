@@ -1,0 +1,56 @@
+---
+- name: Build and Deploy ABSA Cloud (Local Phase A)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    project_root: "../../"
+
+  tasks:
+    - name: Initialize Terraform
+      command: terraform -chdir="{{ project_root }}/terraform/local" init
+      changed_when: false
+
+    - name: Provision local infrastructure (namespace) with Terraform
+      command: terraform -chdir="{{ project_root }}/terraform/local" apply -auto-approve
+      register: provision
+      changed_when: "'0 added, 0 changed, 0 destroyed' not in provision.stdout"
+
+    - name: Build Docker Images
+      command: docker build -t absa-{{ item }}:latest ./services/{{ item }}
+      args:
+        chdir: "{{ project_root }}"
+      loop:
+        - api
+        - worker
+        - frontend
+      changed_when: false
+
+    - name: Install KEDA (Kubernetes Event-driven Autoscaling)
+      command: kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v2.14.0/keda-2.14.0.yaml
+      register: install_keda
+      changed_when: "'configured' in install_keda.stdout or 'created' in install_keda.stdout"
+
+    # Niente Ingress: i Service sono LoadBalancer e OrbStack li espone gia'
+    # su localhost, quindi un ingress controller sarebbe un pezzo in piu'
+    # da installare senza reale beneficio in locale.
+    - name: Apply Kubernetes Manifests
+      command: >-
+        kubectl apply
+        -f k8s/01-config.yaml -f k8s/02-postgres.yaml -f k8s/03-rabbitmq.yaml
+        -f k8s/04-api.yaml -f k8s/05-worker.yaml -f k8s/06-frontend.yaml
+      args:
+        chdir: "{{ project_root }}"
+      register: k8s_apply
+      changed_when: "'configured' in k8s_apply.stdout or 'created' in k8s_apply.stdout"
+
+    - name: Wait for Pods to be ready
+      command: kubectl wait --for=condition=ready pod -l app={{ item }} -n absa-cloud --timeout=90s
+      loop:
+        - postgres
+        - rabbitmq
+        - api
+        - worker
+        - frontend
+      changed_when: false

@@ -6,6 +6,15 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/
 .DS_Store
 checkpoints/
 models/
+
+# Terraform: tfvars e state contengono segreti (password RDS) in chiaro.
+*.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+!*.tfvars.example
