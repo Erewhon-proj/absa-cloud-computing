@@ -1,0 +1,12 @@
+# Copia in terraform.tfvars e personalizza.
+aws_region        = "eu-west-1"
+project           = "absa"
+cluster_name      = "absa-cluster"
+
+# Deve combaciare con l'output `model_bucket` dello stack persistent:
+model_bucket_name = "absa-model-checkpoint-CAMBIAMI"
+
+# Password RDS (meglio passarla via env: export TF_VAR_db_password=...).
+# Solo caratteri A-Z a-z 0-9 _ . ~ - (8-128): finisce in DATABASE_URL, niente
+# : # % ? & @ / o spazi. La validazione Terraform la rifiuta altrimenti.
+db_password       = "CAMBIAMI-una-password-robusta"
