@@ -1,7 +1,8 @@
 """API Gateway (Tier 2).
 
 Riceve recensioni via HTTP, le persiste come 'pending' su PostgreSQL e
-pubblica un task sulla coda RabbitMQ. Il worker le elabora in modo asincrono.
+pubblica un task sulla coda (RabbitMQ in locale, SQS in cloud: vedi queue.py).
+Il worker le elabora in modo asincrono.
 """
 import uuid
 
