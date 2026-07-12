@@ -1,0 +1,173 @@
+---
+# Configurazione e deploy su AWS (Fase B).
+# Presuppone che gli stack Terraform siano gia' applicati:
+#   terraform/aws/persistent  (S3, ECR, Budgets)
+#   terraform/aws/compute      (VPC, EKS, RDS, SQS, IRSA, KEDA)
+# Legge gli output Terraform, renderizza l'overlay k8s/aws e fa il deploy.
+#
+# Prerequisiti CLI: terraform, aws, kubectl, python3.
+# Collection Ansible: cloud.terraform (vedi requirements.yml nella stessa cartella)
+#   ansible-galaxy collection install -r ansible/aws/requirements.yml
+# Esempio:
+#   ansible-playbook ansible/aws/playbook.yml -e upload_model=true
+- name: Deploy ABSA Cloud (Phase B, AWS/EKS)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    image_tag: "latest" # la CI usa il git SHA; in locale "latest"
+    # -e build_images=false se il job push-ecr della CI ha gia' pubblicato
+    # :latest su ECR (vedi .github/workflows/ci.yml): salta la rebuild locale,
+    # utile per il giorno della demo se il push automatico e' andato a buon fine.
+    build_images: true
+    upload_model: false
+    model_local_path: "{{ project_root }}/../absa-trustpilot-banking/models/best_models/lcf_atepc_custom_dataset_cdw_apcacc_89.41_apcf1_69.72_atef1_69.94"
+
+  tasks:
+    # Modulo dedicato (read-only): esegue `terraform output` e restituisce gli
+    # output gia' strutturati in .outputs.<nome>.value. Niente parsing di stringhe
+    # ne' changed_when: leggere non modifica lo stato, il modulo lo sa gia'.
+    - name: Leggi gli output Terraform (stack compute)
+      cloud.terraform.terraform_output:
+        project_path: "{{ project_root }}/terraform/aws/compute"
+      register: tf_compute
+
+    - name: Leggi gli output Terraform (stack persistent)
+      cloud.terraform.terraform_output:
+        project_path: "{{ project_root }}/terraform/aws/persistent"
+      register: tf_persistent
+
+    - name: Costruisci le variabili di deploy
+      set_fact:
+        cluster_name: "{{ tf_compute.outputs.cluster_name.value }}"
+        region: "{{ tf_compute.outputs.region.value }}"
+        sqs_queue_url: "{{ tf_compute.outputs.sqs_queue_url.value }}"
+        database_url: "{{ tf_compute.outputs.database_url.value }}"
+        api_role_arn: "{{ tf_compute.outputs.api_role_arn.value }}"
+        worker_role_arn: "{{ tf_compute.outputs.worker_role_arn.value }}"
+        model_bucket: "{{ tf_persistent.outputs.model_bucket.value }}"
+        ecr_urls: "{{ tf_persistent.outputs.ecr_repository_urls.value }}"
+        # Host del registry, senza il nome della repo: serve al docker login.
+        # Es. 123456789012.dkr.ecr.eu-west-1.amazonaws.com/absa-api -> ...amazonaws.com
+        ecr_registry: "{{ tf_persistent.outputs.ecr_repository_urls.value['absa-api'].split('/')[0] }}"
+
+    - name: Ambiente per il rendering dei manifest (placeholder ${...})
+      set_fact:
+        deploy_env:
+          AWS_REGION: "{{ region }}"
+          SQS_QUEUE_URL: "{{ sqs_queue_url }}"
+          DATABASE_URL: "{{ database_url }}"
+          API_ROLE_ARN: "{{ api_role_arn }}"
+          WORKER_ROLE_ARN: "{{ worker_role_arn }}"
+          S3_MODEL_BUCKET: "{{ model_bucket }}"
+          IMAGE_API: "{{ ecr_urls['absa-api'] }}:{{ image_tag }}"
+          IMAGE_WORKER: "{{ ecr_urls['absa-worker'] }}:{{ image_tag }}"
+          IMAGE_FRONTEND: "{{ ecr_urls['absa-frontend'] }}:{{ image_tag }}"
+
+    - name: Aggiorna kubeconfig per il cluster EKS
+      command: aws eks update-kubeconfig --name {{ cluster_name }} --region {{ region }}
+      changed_when: false
+
+    # Build & push su ECR. Senza questo passo le repo ECR restano vuote e i pod
+    # vanno in ImagePullBackOff: e' il lavoro che in CI fa il job deploy-aws, ma
+    # qui il deploy dev'essere autosufficiente anche senza la pipeline.
+    - name: Login a ECR
+      shell: |
+        set -euo pipefail
+        aws ecr get-login-password --region {{ region }} \
+          | docker login --username AWS --password-stdin "{{ ecr_registry }}"
+      args:
+        executable: /bin/bash
+      when: build_images | bool
+      changed_when: false
+
+    # --platform linux/amd64: il Mac e' ARM, i nodi EKS sono x86. Senza questo
+    # flag l'immagine parte in locale ma sul cluster va in CrashLoopBackOff.
+    # INSTALL_ML sul solo worker: e' l'unico che carica PyABSA (immagine ~3 GB).
+    - name: Build & push delle immagini su ECR
+      shell: |
+        set -euo pipefail
+        docker buildx build --platform linux/amd64 \
+          {{ '--build-arg INSTALL_ML=true' if item == 'worker' else '' }} \
+          -t "{{ ecr_urls['absa-' + item] }}:{{ image_tag }}" \
+          --push "{{ project_root }}/services/{{ item }}"
+      args:
+        executable: /bin/bash
+      loop:
+        - api
+        - worker
+        - frontend
+      when: build_images | bool
+      changed_when: true
+
+    - name: Carica il checkpoint del modello su S3 (opzionale)
+      command: aws s3 sync "{{ model_local_path }}" "s3://{{ model_bucket }}/checkpoint" --region {{ region }}
+      when: upload_model | bool
+
+    - name: Render & apply (namespace, config, service account)
+      shell: |
+        set -euo pipefail
+        python3 "{{ project_root }}/scripts/render_manifest.py" \
+          < "{{ project_root }}/k8s/aws/{{ item }}" | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      environment: "{{ deploy_env }}"
+      loop:
+        - 00-namespace.yaml
+        - 01-config.yaml
+        - 02-serviceaccounts.yaml
+      changed_when: true
+
+    - name: Crea la ConfigMap con lo schema SQL (da db/init.sql)
+      shell: |
+        set -euo pipefail
+        kubectl create configmap db-init-sql -n absa-cloud \
+          --from-file=init.sql="{{ project_root }}/db/init.sql" \
+          --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Reset del Job db-init (campi immutabili sui re-run)
+      command: kubectl delete job db-init -n absa-cloud --ignore-not-found
+      changed_when: false
+
+    - name: Applica il Job di init schema su RDS
+      command: kubectl apply -f "{{ project_root }}/k8s/aws/06-db-init-job.yaml"
+      changed_when: true
+
+    - name: Attendi il completamento dell'init schema
+      command: kubectl wait --for=condition=complete job/db-init -n absa-cloud --timeout=180s
+      changed_when: false
+
+    - name: Render & apply (applicazioni + autoscaling)
+      shell: |
+        set -euo pipefail
+        python3 "{{ project_root }}/scripts/render_manifest.py" \
+          < "{{ project_root }}/k8s/aws/{{ item }}" | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      environment: "{{ deploy_env }}"
+      loop:
+        - 03-api.yaml
+        - 04-worker.yaml
+        - 05-frontend.yaml
+      changed_when: true
+
+    - name: Attendi il rollout di API e Frontend
+      command: kubectl rollout status deployment/{{ item }} -n absa-cloud --timeout=180s
+      loop:
+        - api
+        - frontend
+      changed_when: false
+
+    - name: Endpoint pubblici (LoadBalancer)
+      command: kubectl get svc api frontend -n absa-cloud -o wide
+      register: svc_out
+      changed_when: false
+
+    - name: Mostra gli endpoint
+      debug:
+        var: svc_out.stdout_lines

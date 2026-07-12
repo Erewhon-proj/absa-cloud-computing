@@ -1,0 +1,31 @@
+# Inizializza lo schema su RDS. RDS e' in subnet privata (non raggiungibile dal
+# portatile): il Job gira DENTRO il cluster, che invece la raggiunge.
+# Lo script init.sql arriva dalla ConfigMap db-init-sql, creata a deploy-time da
+# db/init.sql (vedi ansible/aws e la CI). Idempotente: usa CREATE TABLE IF NOT EXISTS.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init
+  namespace: absa-cloud
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: psql
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /init/init.sql'
+          envFrom:
+            - secretRef:
+                name: absa-secret
+          volumeMounts:
+            - name: init
+              mountPath: /init
+      volumes:
+        - name: init
+          configMap:
+            name: db-init-sql

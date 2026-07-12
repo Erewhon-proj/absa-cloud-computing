@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: absa-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "${IMAGE_FRONTEND}"
+          envFrom:
+            - configMapRef:
+                name: absa-config
+          ports:
+            - containerPort: 8501
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: absa-cloud
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8501
+  selector:
+    app: frontend

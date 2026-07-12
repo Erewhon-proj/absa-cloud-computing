@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: absa-cloud
+spec:
+  # Le repliche sono gestite da KEDA (0 -> N). Il valore qui e' solo iniziale.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      serviceAccountName: absa-worker
+      # initContainer: scarica il checkpoint da S3 nel volume condiviso, solo in
+      # modalita' pyabsa. $MODEL_MODE / $MODEL_BUCKET sono env RUNTIME (da
+      # absa-config), NON placeholder envsubst: per questo l'allowlist di
+      # envsubst non li include.
+      initContainers:
+        - name: model-download
+          image: amazon/aws-cli:2.15.30
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              if [ "$MODEL_MODE" = "pyabsa" ]; then
+                echo "Scarico il modello da s3://$MODEL_BUCKET/checkpoint ...";
+                aws s3 sync "s3://$MODEL_BUCKET/checkpoint" /models/checkpoint --region "$AWS_REGION";
+              else
+                echo "MODEL_MODE=$MODEL_MODE: nessun download (mock).";
+              fi
+          envFrom:
+            - configMapRef:
+                name: absa-config
+          volumeMounts:
+            - name: model
+              mountPath: /models/checkpoint
+      containers:
+        - name: worker
+          image: "${IMAGE_WORKER}"
+          envFrom:
+            - configMapRef:
+                name: absa-config
+            - secretRef:
+                name: absa-secret
+          # Sotto /app (WORKDIR): PyABSA risolve il checkpoint relativamente alla
+          # working directory, e con un path esterno fallisce il caricamento.
+          volumeMounts:
+            - name: model
+              mountPath: /app/models/checkpoint
+          # Dimensionato per il modello reale: BERT-base in fp32 sono ~450 MB di
+          # pesi, piu' il runtime PyTorch e le attivazioni del batch.
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+      volumes:
+        - name: model
+          emptyDir: {}
+---
+# KEDA usa il ruolo IRSA dell'operator (provider aws) per leggere la coda.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-aws-sqs
+  namespace: absa-cloud
+spec:
+  podIdentity:
+    provider: aws
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-sqs-scaler
+  namespace: absa-cloud
+spec:
+  scaleTargetRef:
+    name: worker
+  minReplicaCount: 0 # scale-to-zero quando la coda e' vuota
+  maxReplicaCount: 5
+  pollingInterval: 15
+  # 5 minuti di coda vuota prima di tornare a zero. Il cold start di un worker
+  # costa ~45s (immagine da 3 GB + checkpoint da S3 + BERT in RAM): con un
+  # cooldown troppo corto lo si ripaga a ogni singola recensione.
+  cooldownPeriod: 300
+  triggers:
+    - type: aws-sqs-queue
+      authenticationRef:
+        name: keda-aws-sqs
+      metadata:
+        queueURL: "${SQS_QUEUE_URL}"
+        queueLength: "30" # ~1 worker ogni 30 messaggi in coda
+        awsRegion: "${AWS_REGION}"
+        identityOwner: operator
