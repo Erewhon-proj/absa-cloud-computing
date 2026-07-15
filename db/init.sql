@@ -1,5 +1,4 @@
--- Schema iniziale, caricato automaticamente da PostgreSQL al primo avvio.-- 
-
+-- Schema iniziale, caricato automaticamente da PostgreSQL al primo avvio.
 
 CREATE TABLE IF NOT EXISTS reviews (
     id           UUID PRIMARY KEY,

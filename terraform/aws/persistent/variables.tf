@@ -23,11 +23,16 @@ variable "budget_notify_email" {
 variable "budget_limit" {
   type        = string
   default     = "150"
-  description = "Teto mensile del budget (nella valuta dell'account)."
+  description = "Tetto mensile del budget (nella valuta dell'account)."
 }
 
 variable "budget_currency" {
   type        = string
   default     = "USD"
   description = "Valuta del budget di default"
+}
+
+variable "github_repo" {
+  type        = string
+  description = "Repository GitHub (owner/nome) abilitato a pushare su ECR via OIDC."
 }

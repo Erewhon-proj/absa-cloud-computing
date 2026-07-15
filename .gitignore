@@ -15,6 +15,7 @@ models/
 *.tfvars
 *.tfstate
 *.tfstate.*
+*.tfplan
 .terraform/
 .terraform.lock.hcl
 !*.tfvars.example

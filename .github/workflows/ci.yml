@@ -1,100 +1,25 @@
 name: CI/CD Pipeline
 
+# Build & push delle 3 immagini su ECR ad ogni push su main. Il deploy sul
+# cluster (kubectl apply) resta un passo separato via `ansible-playbook
+# ansible/aws/playbook.yml`: il cluster EKS e' effimero (distrutto a fine
+# sessione), quindi un rollout automatico ad ogni commit scriverebbe quasi
+# sempre su un cluster che non esiste.
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch: # rilancio manuale dalla pagina Actions, senza nuovo commit
 
 env:
-  # Usiamo il GitHub Container Registry (gratuito) come base
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  AWS_REGION: eu-west-1
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
+      id-token: write # per l'autenticazione OIDC verso AWS, nessuna chiave statica
       contents: read
-      packages: write
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Log in to the Container registry
-        # Effettua il login solo se non è una PR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # --- Build & Push API ---
-      - name: Build and push API image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/api
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # --- Build & Push Worker ---
-      - name: Build and push Worker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/worker
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-worker:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-worker:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # --- Build & Push Frontend ---
-      - name: Build and push Frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/frontend
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # -------------------------------------------------------------------------
-  # FASE B (AWS) - Build+push delle immagini su ECR.
-  # Solo la build, niente kubectl: il deploy sul cluster resta un passo
-  # deliberato via `ansible-playbook ansible/aws/playbook.yml` (il cluster e'
-  # effimero, distrutto a fine sessione, un rollout automatico ad ogni push
-  # scriverebbe quasi sempre su un cluster che non esiste). Si attiva solo su
-  # push a main e con la variabile repo PUSH_ECR=true. Autenticazione AWS via
-  # OIDC (nessuna chiave statica), permessi minimi: solo push su ECR.
-  #
-  # Configurazione richiesta nel repo GitHub:
-  #   - secret  AWS_DEPLOY_ROLE_ARN  (ruolo IAM assumibile via OIDC GitHub,
-  #             policy AmazonEC2ContainerRegistryPowerUser o equivalente)
-  #   - var     AWS_REGION
-  #   - var     PUSH_ECR = "true"
-  # -------------------------------------------------------------------------
-  push-ecr:
-    needs: build-and-push
-    if: github.ref == 'refs/heads/main' && vars.PUSH_ECR == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write   # necessario per l'OIDC verso AWS
-      contents: read
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      TAG: ${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -102,18 +27,19 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # ubuntu-latest e' gia' x86_64, come i nodi EKS: nessun --platform da
+      # forzare qui (a differenza della build a mano su Mac, che e' ARM).
       - name: Build & push images to ECR
-        # ubuntu-latest e' gia' x86_64, come i nodi EKS: nessun --platform da
-        # forzare qui (a differenza della build a mano su Mac, che e' ARM).
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
           for svc in api worker frontend; do

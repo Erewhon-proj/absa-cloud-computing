@@ -71,9 +71,11 @@ def chips_row(aspects: list[dict]) -> str:
 
 
 def fetch_json(path: str, params: dict | None = None):
-    """GET all'API; None se non raggiungibile (l'errore lo mostra il chiamante)."""
+    """GET all'API; None se non raggiungibile o in errore."""
     try:
-        return requests.get(f"{API_URL}{path}", params=params, timeout=10).json()
+        resp = requests.get(f"{API_URL}{path}", params=params, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
     except requests.RequestException as exc:
         st.error(f"API non raggiungibile: {exc}")
         return None
@@ -121,7 +123,9 @@ with tab_send:
                     review_id = resp.json()["id"]
                     result = None
                     with st.status("In coda, elaborazione in corso...", expanded=False) as status:
-                        for _ in range(30):
+                        # fino a ~90s: in cloud il primo worker puo' dover
+                        # partire da zero (cold start di KEDA + modello)
+                        for _ in range(90):
                             time.sleep(1)
                             try:
                                 res = requests.get(

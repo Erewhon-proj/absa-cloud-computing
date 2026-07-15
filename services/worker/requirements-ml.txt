@@ -2,6 +2,9 @@
 # Installate solo se si builda l'immagine con --build-arg INSTALL_ML=true.
 # NB: PyABSA richiede Python 3.11. Il modello addestrato va montato come volume
 # (non incluso nell'immagine: ~450 MB).
+# I nodi sono solo CPU: l'indice extra fa scegliere i wheel torch "+cpu",
+# senza le librerie CUDA (gigabyte inutili nell'immagine).
+--extra-index-url https://download.pytorch.org/whl/cpu
 pyabsa>=2.4.2
 torch>=2.1,<3
 # transformers <5: dalla 5.x e' sparito tokenization_bert_fast, che PyABSA importa.

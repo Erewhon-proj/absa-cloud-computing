@@ -18,9 +18,9 @@
   vars:
     project_root: "{{ playbook_dir }}/../.."
     image_tag: "latest" # la CI usa il git SHA; in locale "latest"
-    # -e build_images=false se il job push-ecr della CI ha gia' pubblicato
-    # :latest su ECR (vedi .github/workflows/ci.yml): salta la rebuild locale,
-    # utile per il giorno della demo se il push automatico e' andato a buon fine.
+    # -e build_images=false se la CI ha gia' pubblicato :latest su ECR
+    # (vedi .github/workflows/ci.yml): salta la rebuild locale, utile per il
+    # giorno della demo se il push automatico e' andato a buon fine.
     build_images: true
     upload_model: false
     model_local_path: "{{ project_root }}/../absa-trustpilot-banking/models/best_models/lcf_atepc_custom_dataset_cdw_apcacc_89.41_apcf1_69.72_atef1_69.94"
@@ -71,8 +71,8 @@
       changed_when: false
 
     # Build & push su ECR. Senza questo passo le repo ECR restano vuote e i pod
-    # vanno in ImagePullBackOff: e' il lavoro che in CI fa il job deploy-aws, ma
-    # qui il deploy dev'essere autosufficiente anche senza la pipeline.
+    # vanno in ImagePullBackOff: e' lo stesso lavoro della CI ad ogni push su
+    # main, ma qui il deploy dev'essere autosufficiente anche senza pipeline.
     - name: Login a ECR
       shell: |
         set -euo pipefail

@@ -38,8 +38,8 @@
     - name: Apply Kubernetes Manifests
       command: >-
         kubectl apply
-        -f k8s/01-config.yaml -f k8s/02-postgres.yaml -f k8s/03-rabbitmq.yaml
-        -f k8s/04-api.yaml -f k8s/05-worker.yaml -f k8s/06-frontend.yaml
+        -f k8s/local/01-config.yaml -f k8s/local/02-postgres.yaml -f k8s/local/03-rabbitmq.yaml
+        -f k8s/local/04-api.yaml -f k8s/local/05-worker.yaml -f k8s/local/06-frontend.yaml
       args:
         chdir: "{{ project_root }}"
       register: k8s_apply
