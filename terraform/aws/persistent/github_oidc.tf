@@ -29,10 +29,18 @@ data "aws_iam_policy_document" "github_actions_trust" {
     }
 
     # Solo i push sul branch main del repo indicato: niente PR, niente fork.
+    # GitHub puo' emettere il subject in forma "immutabile", con gli ID numerici
+    # di organizzazione e repository accodati ai rispettivi nomi
+    # (repo:owner@123/nome@456:...). Accettiamo entrambe le forme: i "@*"
+    # coprono solo il segmento numerico, mentre owner, repo e branch restano
+    # vincolati alla lettera (i nomi GitHub non possono contenere "@" o "/").
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/main"]
+      values = [
+        "repo:${var.github_repo}:ref:refs/heads/main",
+        "repo:${split("/", var.github_repo)[0]}@*/${split("/", var.github_repo)[1]}@*:ref:refs/heads/main",
+      ]
     }
   }
 }

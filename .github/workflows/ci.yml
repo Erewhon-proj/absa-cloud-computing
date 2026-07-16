@@ -24,16 +24,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Debug temporaneo: stampa i claim (aud/sub/iss) del token OIDC che GitHub
-      # genera, per confrontarli con la trust policy del ruolo IAM. Nessun
-      # segreto stampato: solo il payload decodificato, il token grezzo resta
-      # nella variabile.
-      - name: Debug token OIDC
-        run: |
-          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | python3 -c "import sys,json; print(json.load(sys.stdin)['value'])")
-          echo "$TOKEN" | cut -d. -f2 | python3 -c "import base64,json,sys; p=sys.stdin.read().strip(); p+='='*(-len(p)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(p)), indent=2))" | grep -E '"aud"|"sub"|"iss"|"repository"|"ref"'
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
