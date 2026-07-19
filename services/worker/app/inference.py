@@ -77,14 +77,6 @@ def _map_result(item: Dict) -> List[Dict]:
     return out
 
 
-def _pyabsa_infer(text: str) -> List[Dict]:
-    extractor = _load_pyabsa()
-    result = extractor.extract_aspect(
-        inference_source=[text], pred_sentiment=True
-    )
-    return _map_result(result[0]) if result else []
-
-
 def _pyabsa_infer_batch(texts: List[str]) -> List[List[Dict]]:
     extractor = _load_pyabsa()
     results = extractor.extract_aspect(
@@ -159,12 +151,7 @@ def _mock_infer(text: str) -> List[Dict]:
 # --------------------------------------------------------------------------- #
 def infer(text: str) -> List[Dict]:
     """Inferenza su un singolo testo -> lista di coppie (aspetto, sentiment)."""
-    if MODEL_MODE == "pyabsa":
-        try:
-            return _pyabsa_infer(text)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("PyABSA non disponibile, uso il mock: %s", exc)
-    return _mock_infer(text)
+    return infer_batch([text])[0]
 
 
 def infer_batch(texts: List[str]) -> List[List[Dict]]:

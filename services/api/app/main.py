@@ -66,6 +66,12 @@ def list_reviews(bank: str | None = Query(None), limit: int = Query(20, ge=1, le
 @app.get("/reviews/{review_id}", response_model=ReviewOut)
 def get_review(review_id: str):
     """Restituisce stato della recensione e aspetti estratti."""
+    # Valida il formato prima della query: un id non-UUID manderebbe in errore
+    # il cast di PostgreSQL (500) invece di un semplice "non trovato".
+    try:
+        uuid.UUID(review_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Review not found")
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT * FROM reviews WHERE id = %s", (review_id,))
         row = cur.fetchone()

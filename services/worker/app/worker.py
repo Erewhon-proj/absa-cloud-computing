@@ -216,7 +216,15 @@ def consume_sqs() -> None:
             entries = [
                 {"Id": str(j), "ReceiptHandle": h} for j, h in enumerate(chunk)
             ]
-            sqs.delete_message_batch(QueueUrl=SQS_QUEUE_URL, Entries=entries)
+            resp = sqs.delete_message_batch(QueueUrl=SQS_QUEUE_URL, Entries=entries)
+            # La chiamata puo' fallire parzialmente senza sollevare eccezioni:
+            # le entry fallite verranno riconsegnate (elaborazione idempotente).
+            failed = resp.get("Failed", [])
+            if failed:
+                logger.warning(
+                    "delete_message_batch: %d entry fallite, verranno riconsegnate",
+                    len(failed),
+                )
 
     logger.info(
         "Worker SQS pronto (MODEL_MODE=%s, max_msgs=%d, queue=%s). In attesa...",

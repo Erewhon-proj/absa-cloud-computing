@@ -14,7 +14,27 @@ env:
   AWS_REGION: eu-west-1
 
 jobs:
+  # Test unitari (logica del worker e rendering dei manifest): se falliscono,
+  # le immagini non vengono buildate ne' pubblicate.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r services/worker/requirements.txt pytest
+
+      - name: Run tests
+        run: pytest -q tests/
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       id-token: write # per l'autenticazione OIDC verso AWS, nessuna chiave statica

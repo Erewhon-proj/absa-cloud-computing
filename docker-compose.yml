@@ -65,8 +65,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    deploy:
-      replicas: 1
 
   frontend:
     build: ./services/frontend

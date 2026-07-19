@@ -5,6 +5,7 @@ Due schede:
   - Dashboard: sentiment aggregato per aspetto (GET /stats) + ultime
     recensioni con i loro aspetti (GET /reviews).
 """
+import html
 import os
 import time
 
@@ -60,7 +61,9 @@ def sentiment_chip(aspect: str, sentiment: str, confidence: float | None) -> str
     """HTML di una chip colorata 'aspetto · sentiment (confidenza)'."""
     color = SENTIMENT_COLORS.get(sentiment, "#8A93A6")
     conf = f" <small>{confidence:.0%}</small>" if confidence is not None else ""
-    return f'<span class="chip" style="background:{color}">{aspect}{conf}</span>'
+    # escape: l'aspetto e' testo estratto dalla recensione dell'utente e questa
+    # stringa viene resa con unsafe_allow_html
+    return f'<span class="chip" style="background:{color}">{html.escape(aspect)}{conf}</span>'
 
 
 def chips_row(aspects: list[dict]) -> str:
@@ -227,7 +230,7 @@ with tab_dash:
         reviews = fetch_json("/reviews", {**params, "limit": 20}) or []
         for r in reviews:
             with st.container(border=True):
-                bank_label = r["bank"] or "banca non indicata"
+                bank_label = html.escape(r["bank"] or "banca non indicata")
                 date = r["created_at"][:16].replace("T", " ")
                 st.markdown(
                     f'<div class="review-meta">🏦 <b>{bank_label}</b> · {date}</div>',

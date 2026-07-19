@@ -22,12 +22,12 @@ spec:
                 name: absa-config
             - secretRef:
                 name: absa-secret
-          # Configurazione per mock mode
-          env:
-            - name: MODEL_MODE
-              value: "mock"
-            # - name: ABSA_CHECKPOINT
-            #   value: "/models/checkpoint"
+          # MODEL_MODE arriva dalla ConfigMap absa-config (mock di default).
+          # Per il modello reale: MODEL_MODE=pyabsa nella ConfigMap e
+          # scommentare env/volumeMounts/volumes qui sotto.
+          # env:
+          #   - name: ABSA_CHECKPOINT
+          #     value: "/models/checkpoint"
           # volumeMounts:
           #   - name: model-volume
           #     mountPath: /models/checkpoint

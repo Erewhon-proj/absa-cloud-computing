@@ -45,12 +45,14 @@
       register: k8s_apply
       changed_when: "'configured' in k8s_apply.stdout or 'created' in k8s_apply.stdout"
 
+    # Il worker non compare nel loop: con KEDA a minReplicaCount=0 e coda
+    # vuota puo' essere gia' a zero repliche, e il wait fallirebbe
+    # ("no matching resources") con il sistema perfettamente sano.
     - name: Wait for Pods to be ready
       command: kubectl wait --for=condition=ready pod -l app={{ item }} -n absa-cloud --timeout=90s
       loop:
         - postgres
         - rabbitmq
         - api
-        - worker
         - frontend
       changed_when: false

@@ -29,7 +29,7 @@ SAMPLES = [
 ]
 
 
-def send_one(url: str, idx: int) -> int:
+def send_one(url: str) -> int:
     payload = {
         "text": random.choice(SAMPLES),
         "bank": random.choice(BANKS),
@@ -48,7 +48,7 @@ def main():
     start = time.time()
     ok = 0
     with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        futures = [pool.submit(send_one, args.url, i) for i in range(args.n)]
+        futures = [pool.submit(send_one, args.url) for _ in range(args.n)]
         for fut in as_completed(futures):
             try:
                 if fut.result() == 202:
