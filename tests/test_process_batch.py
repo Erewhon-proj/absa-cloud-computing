@@ -2,14 +2,9 @@
 
 DB e inferenza sono sostituiti da oggetti finti in memoria: qui si verifica
 il contratto sui messaggi (quali handle vengono confermati e in quale stato
-finiscono le recensioni), non psycopg2 ne' il modello.
+finiscono le recensioni), non psycopg2 né il modello.
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / "worker"))
-
-from app import worker  # noqa: E402
+from app import worker
 
 
 class FakeCursor:
@@ -71,7 +66,7 @@ def test_batch_ok_conferma_tutti_gli_handle(monkeypatch):
 
 
 def test_messaggio_orfano_confermato_senza_inferenza(monkeypatch):
-    """Review sparita dal DB: il messaggio va confermato (ritentare e' inutile)
+    """Review sparita dal DB: il messaggio va confermato (ritentare è inutile)
     e il suo testo non deve arrivare al modello."""
     fake_db(monkeypatch, [{"id": "id1", "text": "testo uno"}])
     chiamate = []
@@ -105,9 +100,9 @@ def test_errore_di_inferenza_marca_error_e_conferma(monkeypatch):
 
 
 def test_db_irraggiungibile_nessuna_conferma(monkeypatch):
-    """DB giu': nessun handle restituito, i messaggi verranno riconsegnati."""
+    """DB giù: nessun handle restituito, i messaggi verranno riconsegnati."""
     def no_db():
-        raise ConnectionError("db giu'")
+        raise ConnectionError("db giù")
 
     monkeypatch.setattr(worker, "get_conn", no_db)
 
