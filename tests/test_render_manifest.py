@@ -25,13 +25,15 @@ def test_placeholder_risolto():
 
 
 def test_variabile_runtime_intatta():
-    # $MODEL_MODE senza graffe e' una variabile della shell del container:
+    # $MODEL_MODE senza graffe è una variabile della shell del container:
     # non deve essere toccata, nemmeno se esiste nell'ambiente di deploy.
     out = render('cmd: echo "$MODEL_MODE"', {"MODEL_MODE": "pyabsa"})
     assert out.stdout == 'cmd: echo "$MODEL_MODE"'
 
 
-def test_variabile_mancante_avvisa_e_svuota():
+def test_variabile_mancante_fa_fallire_il_rendering():
+    # Meglio un deploy che si ferma qui che un Secret applicato vuoto: il
+    # manifest reso a metà non deve mai arrivare a kubectl.
     env = {k: v for k, v in os.environ.items() if k != "NON_ESISTE"}
     out = subprocess.run(
         [sys.executable, str(SCRIPT)],
@@ -39,6 +41,23 @@ def test_variabile_mancante_avvisa_e_svuota():
         env=env,
         capture_output=True,
         text=True,
+        check=False,
     )
-    assert out.stdout == "x: "
+    assert out.returncode != 0
+    assert out.stdout == ""
     assert "NON_ESISTE" in out.stderr
+
+
+def test_elenca_tutte_le_variabili_mancanti_in_una_volta():
+    # Segnalarle una per volta costringerebbe a rilanciare il deploy N volte.
+    env = {k: v for k, v in os.environ.items() if k not in ("MANCA_UNO", "MANCA_DUE")}
+    out = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        input="a: ${MANCA_UNO}\nb: ${MANCA_DUE}\n",
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "MANCA_UNO" in out.stderr
+    assert "MANCA_DUE" in out.stderr
