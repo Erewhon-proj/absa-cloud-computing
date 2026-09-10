@@ -1,29 +1,28 @@
 """Schemi Pydantic per richieste/risposte dell'API."""
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
 
 class ReviewIn(BaseModel):
     text: str = Field(..., min_length=3, description="Testo della recensione")
-    bank: Optional[str] = Field(None, description="Nome della banca")
+    bank: str | None = Field(None, description="Nome della banca")
 
 
 class AspectOut(BaseModel):
     aspect: str
     sentiment: str
-    confidence: Optional[float] = None
+    confidence: float | None = None
 
 
 class ReviewOut(BaseModel):
     id: str
-    bank: Optional[str]
+    bank: str | None
     text: str
     status: str
     created_at: datetime
-    processed_at: Optional[datetime] = None
-    aspects: List[AspectOut] = []
+    processed_at: datetime | None = None
+    aspects: list[AspectOut] = []
 
 
 class ReviewAccepted(BaseModel):

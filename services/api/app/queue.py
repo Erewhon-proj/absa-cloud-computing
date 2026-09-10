@@ -5,7 +5,7 @@ Due backend, selezionati da QUEUE_BACKEND:
   - "sqs":                Amazon SQS via boto3 -> Fase B cloud (AWS).
 
 L'interfaccia pubblica resta `publish(message: dict)`, identica per entrambi:
-chi chiama (main.py) non sa quale backend e' attivo.
+chi chiama (main.py) non sa quale backend è attivo.
 """
 import json
 import os
@@ -24,7 +24,7 @@ _sqs_client = None
 
 
 def _publish_rabbitmq(message: dict) -> None:
-    """Apre una connessione per publish: semplice e robusto (progetto didattico)."""
+    """Apre una connessione per publish."""
     import pika
 
     params = pika.URLParameters(RABBITMQ_URL)
@@ -43,7 +43,7 @@ def _publish_rabbitmq(message: dict) -> None:
 
 
 def _get_sqs():
-    """Client SQS riusato tra le richieste (boto3 e' thread-safe per send_message)."""
+    """Client SQS riusato tra le richieste (boto3 è thread-safe per send_message)."""
     global _sqs_client
     if _sqs_client is None:
         import boto3

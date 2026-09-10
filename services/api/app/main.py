@@ -4,6 +4,7 @@ Riceve recensioni via HTTP, le persiste come 'pending' su PostgreSQL e
 pubblica un task sulla coda (RabbitMQ in locale, SQS in cloud: vedi queue.py).
 Il worker le elabora in modo asincrono.
 """
+import logging
 import uuid
 
 from fastapi import FastAPI, HTTPException, Query
@@ -12,6 +13,8 @@ from psycopg2.extras import RealDictCursor
 from .db import get_conn
 from .queue import publish
 from .schemas import ReviewAccepted, ReviewIn, ReviewOut
+
+logger = logging.getLogger("api")
 
 app = FastAPI(title="ABSA API Gateway", version="0.1.0")
 
@@ -25,6 +28,9 @@ def health():
 def create_review(review: ReviewIn):
     """Accetta una recensione e la mette in coda per l'inferenza asincrona."""
     review_id = str(uuid.uuid4())
+    # Prima il commit, poi la coda. Il worker cerca la recensione con un'altra
+    # connessione e finché non c'è il commit non la vede: pubblicando prima,
+    # un worker libero la cercava, non la trovava e scartava il messaggio.
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -32,8 +38,16 @@ def create_review(review: ReviewIn):
                 "VALUES (%s, %s, %s, 'pending')",
                 (review_id, review.bank, review.text),
             )
-        # publish dentro il with get_conn(): se la coda fallisce, la INSERT va in rollback
+    try:
         publish({"review_id": review_id})
+    except Exception:
+        # Senza messaggio in coda nessuno la elaborerebbe: la tolgo dal DB,
+        # così non resta 'pending' per sempre, e il client può riprovare.
+        logger.exception("Pubblicazione in coda fallita per %s", review_id)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM reviews WHERE id = %s", (review_id,))
+        raise HTTPException(status_code=503, detail="Queue unavailable") from None
     return {"id": review_id, "status": "pending"}
 
 
@@ -66,12 +80,13 @@ def list_reviews(bank: str | None = Query(None), limit: int = Query(20, ge=1, le
 @app.get("/reviews/{review_id}", response_model=ReviewOut)
 def get_review(review_id: str):
     """Restituisce stato della recensione e aspetti estratti."""
-    # Valida il formato prima della query: un id non-UUID manderebbe in errore
-    # il cast di PostgreSQL (500) invece di un semplice "non trovato".
+    # Valida il formato prima della query
     try:
         uuid.UUID(review_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Review not found")
+        # from None: il ValueError di uuid.UUID è un dettaglio interno,
+        # fuori resta solo il 404.
+        raise HTTPException(status_code=404, detail="Review not found") from None
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT * FROM reviews WHERE id = %s", (review_id,))
         row = cur.fetchone()
