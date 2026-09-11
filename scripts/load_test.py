@@ -16,7 +16,7 @@ import requests
 BANKS = ["Fineco", "Revolut", "BBVA", "Intesa", "Unicredit", "N26"]
 
 SAMPLES = [
-    "L'app e' comodissima e i bonifici sono velocissimi.",
+    "L'app è comodissima e i bonifici sono velocissimi.",
     "Assistenza pessima, ho aspettato 40 minuti al call center.",
     "Conto a canone zero, nessuna commissione: ottimo.",
     "La carta non funziona e nessuno mi aiuta, vergogna.",
@@ -53,7 +53,7 @@ def main():
             try:
                 if fut.result() == 202:
                     ok += 1
-            except Exception as exc:  # noqa: BLE001
+            except requests.RequestException as exc:
                 print("Errore:", exc)
 
     elapsed = time.time() - start

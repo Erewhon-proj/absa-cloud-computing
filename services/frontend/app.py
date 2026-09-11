@@ -8,6 +8,8 @@ Due schede:
 import html
 import os
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.express as px
@@ -15,6 +17,9 @@ import requests
 import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://api:8000")
+
+# L'API restituisce le date in UTC: le mostriamo con l'ora italiana.
+FUSO_ORARIO = ZoneInfo("Europe/Rome")
 
 # Banche note (stesse di scripts/load_test.py); "Altra..." abilita input libero.
 BANKS = ["Fineco", "Revolut", "BBVA", "Intesa", "Unicredit", "N26"]
@@ -28,7 +33,7 @@ SENTIMENT_COLORS = {
 
 st.set_page_config(page_title="ABSA Banking", page_icon="🏦", layout="wide")
 
-# Ritocchi estetici: chip colorate per gli aspetti e header piu' compatto.
+# Ritocchi estetici: chip colorate per gli aspetti e header più compatto.
 st.markdown(
     """
     <style>
@@ -61,7 +66,7 @@ def sentiment_chip(aspect: str, sentiment: str, confidence: float | None) -> str
     """HTML di una chip colorata 'aspetto · sentiment (confidenza)'."""
     color = SENTIMENT_COLORS.get(sentiment, "#8A93A6")
     conf = f" <small>{confidence:.0%}</small>" if confidence is not None else ""
-    # escape: l'aspetto e' testo estratto dalla recensione dell'utente e questa
+    # escape: l'aspetto è testo estratto dalla recensione dell'utente e questa
     # stringa viene resa con unsafe_allow_html
     return f'<span class="chip" style="background:{color}">{html.escape(aspect)}{conf}</span>'
 
@@ -101,7 +106,7 @@ with tab_send:
             text = st.text_area(
                 "Recensione",
                 height=150,
-                placeholder="Es. L'app e' comoda ma l'assistenza e' lentissima...",
+                placeholder="Es. L'app è comoda ma l'assistenza è lentissima...",
             )
             submitted = st.form_submit_button("Invia recensione", type="primary")
             st.caption("Invia con il pulsante o con Ctrl+Enter (⌘+Enter su Mac).")
@@ -126,7 +131,7 @@ with tab_send:
                     review_id = resp.json()["id"]
                     result = None
                     with st.status("In coda, elaborazione in corso...", expanded=False) as status:
-                        # fino a ~90s: in cloud il primo worker puo' dover
+                        # fino a ~90s: in cloud il primo worker può dover
                         # partire da zero (cold start di KEDA + modello)
                         for _ in range(90):
                             time.sleep(1)
@@ -144,7 +149,7 @@ with tab_send:
                                 status.update(label="Errore in elaborazione", state="error")
                                 break
                         else:
-                            status.update(label="Timeout: riprova piu' tardi", state="error")
+                            status.update(label="Timeout: riprova più tardi", state="error")
                     if result:
                         st.subheader("Aspetti rilevati")
                         if result["aspects"]:
@@ -179,7 +184,9 @@ with tab_dash:
 
         with col_aspects:
             all_aspects = sorted(df["aspect"].unique())
-            chosen = st.multiselect("Aspetti (vuoto = tutti)", all_aspects)
+            chosen = st.multiselect(
+                "Aspetti (vuoto = tutti)", all_aspects, placeholder="Scegli gli aspetti"
+            )
         if chosen:
             df = df[df["aspect"].isin(chosen)]
 
@@ -193,7 +200,7 @@ with tab_dash:
         m1, m2, m3 = st.columns(3)
         m1.metric("Menzioni totali", total)
         m2.metric("Positive", f"{positive / total:.0%}" if total else "—")
-        m3.metric("Aspetto piu' criticato", worst)
+        m3.metric("Aspetto più criticato", worst)
 
         st.divider()
         col_bar, col_pie = st.columns([2, 1])
@@ -231,7 +238,8 @@ with tab_dash:
         for r in reviews:
             with st.container(border=True):
                 bank_label = html.escape(r["bank"] or "banca non indicata")
-                date = r["created_at"][:16].replace("T", " ")
+                creata = datetime.fromisoformat(r["created_at"]).astimezone(FUSO_ORARIO)
+                date = creata.strftime("%d/%m/%Y %H:%M")
                 st.markdown(
                     f'<div class="review-meta">🏦 <b>{bank_label}</b> · {date}</div>',
                     unsafe_allow_html=True,
