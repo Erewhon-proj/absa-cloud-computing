@@ -1,5 +1,9 @@
 *.save
 
+# Compose lo carica in automatico: e' la configurazione locale di chi sviluppa
+# (es. modello reale montato da fuori repo), non parte del progetto.
+docker-compose.override.yml
+
 __pycache__/
 *.pyc
 .env
@@ -7,9 +11,15 @@ __pycache__/
 venv/
 *.egg-info/
 .pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
 .DS_Store
 checkpoints/
-models/
+# Il checkpoint del modello (~450 MB) non va su git: si scarica a parte,
+# istruzioni in models/README.md
+models/*
+!models/README.md
 
 # Terraform: tfvars e state contengono segreti (password RDS) in chiaro.
 *.tfvars

@@ -1,0 +1,15 @@
+# Variante col modello reale. Si aggiunge al docker-compose.yml normale:
+#   docker compose -f docker-compose.yml -f docker-compose.pyabsa.yml up --build
+# Prima va scaricato il checkpoint in models/ (vedi models/README.md).
+services:
+  worker:
+    build:
+      context: ./services/worker
+      args:
+        INSTALL_ML: "true" # installa PyABSA e PyTorch (CPU)
+    environment:
+      MODEL_MODE: pyabsa
+      # Sotto /app (WORKDIR): PyABSA risolve il checkpoint relativo alla cwd.
+      ABSA_CHECKPOINT: /app/models/checkpoint
+    volumes:
+      - ./models/lcf_atepc_custom_dataset_cdw_apcacc_89.41_apcf1_69.72_atef1_69.94:/app/models/checkpoint:ro

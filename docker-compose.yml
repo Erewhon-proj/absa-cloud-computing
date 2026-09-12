@@ -48,18 +48,14 @@ services:
         condition: service_healthy
 
   worker:
-    build:
-      context: ./services/worker
-      args:
-        INSTALL_ML: "false"     # "true" per installare PyABSA
+    build: ./services/worker
     environment:
       DATABASE_URL: postgresql://absa_app:absa_local_pw@postgres:5432/absa
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       QUEUE_NAME: absa.reviews
-      MODEL_MODE: mock          # "pyabsa" per usare il modello reale
-      # ABSA_CHECKPOINT: /models/checkpoint
-    # volumes:
-    #   - ../absa-trustpilot-banking/models/best_models/lcf_atepc_custom_dataset_cdw_apcacc_89.41_apcf1_69.72_atef1_69.94:/models/checkpoint:ro
+      # Euristica a parole chiave. Per il modello reale: docker-compose.pyabsa.yml
+      MODEL_MODE: mock
+      # MOCK_DELAY: "2"         # costo simulato per batch, per vedere lo scaling
     depends_on:
       postgres:
         condition: service_healthy
