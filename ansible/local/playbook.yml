@@ -5,51 +5,131 @@
   gather_facts: false
 
   vars:
-    project_root: "../../"
+    # Come in ansible/aws: il percorso parte dalla cartella del playbook,
+    # così si può lanciare da qualsiasi directory.
+    project_root: "{{ playbook_dir }}/../.."
+    # Cluster su cui installare. Terraform e kubectl devono usare lo stesso,
+    # altrimenti con il kubeconfig ancora su EKS si installerebbe tutto lì.
+    # Con Docker Desktop: -e kube_context=docker-desktop
+    kube_context: orbstack
+    # "mock" oppure "pyabsa" per il modello reale: -e model_mode=pyabsa
+    model_mode: mock
+    # Cartella del checkpoint scaricato (vedi models/README.md)
+    model_dir: "{{ project_root }}/models/lcf_atepc_custom_dataset_cdw_apcacc_89.41_apcf1_69.72_atef1_69.94"
+    services:
+      - api
+      - worker
+      - frontend
 
   tasks:
+    - name: Check model_mode
+      assert:
+        that: model_mode in ["mock", "pyabsa"]
+        fail_msg: "model_mode deve essere mock oppure pyabsa, non '{{ model_mode }}'"
+
+    # Senza questo controllo il worker partirebbe lo stesso e, non trovando il
+    # modello, userebbe il mock senza che nessuno se ne accorga.
+    - name: Check that the model checkpoint exists
+      stat:
+        path: "{{ model_dir }}/lcf_atepc.state_dict"
+      register: checkpoint
+      when: model_mode == "pyabsa"
+
+    - name: Stop if the checkpoint is missing
+      fail:
+        msg: "Checkpoint non trovato in {{ model_dir }}: scaricalo seguendo models/README.md"
+      when: model_mode == "pyabsa" and not checkpoint.stat.exists
+
     - name: Initialize Terraform
       command: terraform -chdir="{{ project_root }}/terraform/local" init
       changed_when: false
 
     - name: Provision local infrastructure (namespace) with Terraform
-      command: terraform -chdir="{{ project_root }}/terraform/local" apply -auto-approve
+      command: terraform -chdir="{{ project_root }}/terraform/local" apply -auto-approve -var "kube_context={{ kube_context }}"
       register: provision
       changed_when: "'0 added, 0 changed, 0 destroyed' not in provision.stdout"
 
+    # Il tag è sempre :latest: se cambia solo il codice il manifest resta uguale,
+    # kubectl apply non vede differenze e i pod continuano col codice vecchio.
+    # Salvo l'ID delle immagini prima e dopo la build per sapere quali riavviare.
+    - name: Read image IDs before the build
+      command: docker images -q absa-{{ item }}:latest
+      loop: "{{ services }}"
+      register: images_before
+      changed_when: false
+
+    # Col modello reale il worker va buildato con PyABSA e PyTorch
     - name: Build Docker Images
-      command: docker build -t absa-{{ item }}:latest ./services/{{ item }}
+      command: >-
+        docker build -t absa-{{ item }}:latest
+        --build-arg INSTALL_ML={{ (item == 'worker' and model_mode == 'pyabsa') | lower }}
+        ./services/{{ item }}
       args:
         chdir: "{{ project_root }}"
-      loop:
-        - api
-        - worker
-        - frontend
+      loop: "{{ services }}"
+      # Senza questa variabile buildx aggiunge all'immagine dei metadati con la
+      # data della build, e l'ID cambierebbe a ogni giro anche senza modifiche.
+      environment:
+        BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
+      changed_when: false
+
+    - name: Read image IDs after the build
+      command: docker images -q absa-{{ item }}:latest
+      loop: "{{ services }}"
+      register: images_after
       changed_when: false
 
     - name: Install KEDA (Kubernetes Event-driven Autoscaling)
-      command: kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v2.14.0/keda-2.14.0.yaml
+      command: kubectl --context "{{ kube_context }}" apply --server-side -f https://github.com/kedacore/keda/releases/download/v2.14.0/keda-2.14.0.yaml
       register: install_keda
       changed_when: "'configured' in install_keda.stdout or 'created' in install_keda.stdout"
 
-    # Niente Ingress: i Service sono LoadBalancer e OrbStack li espone gia'
-    # su localhost, quindi un ingress controller sarebbe un pezzo in piu'
-    # da installare senza reale beneficio in locale.
+    # Lo schema esiste solo in db/init.sql: la ConfigMap si genera da lì, come
+    # in ansible/aws, così non c'è una seconda copia da tenere allineata.
+    - name: Create the SQL schema ConfigMap from db/init.sql
+      shell: |
+        set -euo pipefail
+        kubectl --context "{{ kube_context }}" -n absa-cloud create configmap postgres-init-script \
+          --from-file=init.sql="{{ project_root }}/db/init.sql" \
+          --dry-run=client -o yaml | kubectl --context "{{ kube_context }}" apply -f -
+      args:
+        executable: /bin/bash
+      register: schema_cm
+      changed_when: "'configured' in schema_cm.stdout or 'created' in schema_cm.stdout"
+
+    # Niente Ingress: i Service sono LoadBalancer e OrbStack li espone già su localhost.
+    # k8s/local-pyabsa riusa i manifest di k8s/local cambiando solo il worker.
+    # render_manifest.py inserisce il percorso del checkpoint, che deve essere
+    # assoluto e senza "..": per questo realpath.
     - name: Apply Kubernetes Manifests
-      command: >-
-        kubectl apply
-        -f k8s/local/01-config.yaml -f k8s/local/02-postgres.yaml -f k8s/local/03-rabbitmq.yaml
-        -f k8s/local/04-api.yaml -f k8s/local/05-worker.yaml -f k8s/local/06-frontend.yaml
+      shell: |
+        set -euo pipefail
+        kubectl kustomize {{ 'k8s/local-pyabsa' if model_mode == 'pyabsa' else 'k8s/local' }} \
+          | python3 scripts/render_manifest.py \
+          | kubectl --context "{{ kube_context }}" apply -f -
       args:
         chdir: "{{ project_root }}"
+        executable: /bin/bash
+      environment:
+        MODEL_DIR: "{{ model_dir | realpath }}"
       register: k8s_apply
       changed_when: "'configured' in k8s_apply.stdout or 'created' in k8s_apply.stdout"
 
-    # Il worker non compare nel loop: con KEDA a minReplicaCount=0 e coda
-    # vuota puo' essere gia' a zero repliche, e il wait fallirebbe
-    # ("no matching resources") con il sistema perfettamente sano.
-    - name: Wait for Pods to be ready
-      command: kubectl wait --for=condition=ready pod -l app={{ item }} -n absa-cloud --timeout=90s
+    # Solo i deployment la cui immagine è cambiata. Il worker a zero repliche si
+    # può riavviare lo stesso: i pod che KEDA creerà dopo useranno l'immagine nuova.
+    - name: Restart deployments with a new image
+      command: kubectl --context "{{ kube_context }}" -n absa-cloud rollout restart deployment/{{ item.0.item }}
+      loop: "{{ images_before.results | zip(images_after.results) | list }}"
+      loop_control:
+        label: "{{ item.0.item }}"
+      when: item.0.stdout != item.1.stdout
+
+    # rollout status e non "wait pod": dopo un riavvio per qualche secondo ci sono
+    # sia il pod vecchio che quello nuovo, e aspetta che il nuovo sia pronto.
+    # Il worker non compare nel loop in quanto con KEDA a minReplicaCount=0 e coda
+    # vuota può essere già a zero repliche
+    - name: Wait for Deployments to be ready
+      command: kubectl --context "{{ kube_context }}" -n absa-cloud rollout status deployment/{{ item }} --timeout=90s
       loop:
         - postgres
         - rabbitmq

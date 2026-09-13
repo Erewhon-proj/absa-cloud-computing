@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: absa-config
+  namespace: absa-cloud
+data:
+  MODEL_MODE: "pyabsa"
+  # Dove il worker trova il checkpoint (montato da worker.yaml)
+  ABSA_CHECKPOINT: "/app/models/checkpoint"
+  # Il ritardo simulato serve solo al mock
+  MOCK_DELAY: "0"

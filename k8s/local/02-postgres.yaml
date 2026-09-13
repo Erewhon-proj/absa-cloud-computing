@@ -17,6 +17,11 @@ metadata:
   namespace: absa-cloud
 spec:
   replicas: 1
+  # Recreate e non RollingUpdate: il PVC è ReadWriteOnce, quindi un secondo pod
+  # non riuscirebbe a montarlo finché il primo è vivo e l'aggiornamento
+  # resterebbe bloccato. Qui il vecchio pod muore prima che nasca il nuovo.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: postgres
@@ -45,6 +50,7 @@ spec:
             claimName: postgres-pvc
         - name: init-sql
           configMap:
+            # creata da ansible/local/playbook.yml a partire da db/init.sql
             name: postgres-init-script
 ---
 apiVersion: v1

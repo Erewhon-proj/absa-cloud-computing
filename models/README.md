@@ -18,8 +18,10 @@ models/
 ```
 
 Il nome della cartella va lasciato così, perché è quello che si aspettano
-`docker-compose.pyabsa.yml` e `ansible/aws/playbook.yml`.
+`docker-compose.pyabsa.yml`, `ansible/local/playbook.yml` e
+`ansible/aws/playbook.yml`.
 
-Per avviarlo in Compose: `docker compose -f docker-compose.yml -f
-docker-compose.pyabsa.yml up --build`. Senza il checkpoint il progetto
-funziona lo stesso in modalità `mock`.
+Per avviarlo: in Compose `docker compose -f docker-compose.yml -f
+docker-compose.pyabsa.yml up --build`, in Kubernetes
+`ansible-playbook ansible/local/playbook.yml -e model_mode=pyabsa`.
+Senza il checkpoint il progetto funziona lo stesso in modalità `mock`.

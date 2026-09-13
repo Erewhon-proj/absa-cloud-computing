@@ -1,0 +1,8 @@
+# Variante col modello reale: parte dai manifest di k8s/local e cambia solo
+# quello che serve al worker. Si usa con:
+#   ansible-playbook ansible/local/playbook.yml -e model_mode=pyabsa
+resources:
+  - ../local
+patches:
+  - path: config.yaml
+  - path: worker.yaml

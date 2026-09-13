@@ -1,3 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-pvc
+  namespace: absa-cloud
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,6 +17,10 @@ metadata:
   namespace: absa-cloud
 spec:
   replicas: 1
+  # Come per Postgres: il PVC è ReadWriteOnce, il pod vecchio deve sparire
+  # prima che parta quello nuovo.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: rabbitmq
@@ -13,17 +29,33 @@ spec:
       labels:
         app: rabbitmq
     spec:
+      # RabbitMQ salva i dati in una cartella che ha il nome del nodo
+      # (rabbit@<hostname>). In un Deployment l'hostname del pod cambia a ogni
+      # riavvio, quindi senza fissarlo il nuovo pod aprirebbe una cartella vuota
+      # e le code durable andrebbero perse lo stesso, volume o no.
+      hostname: rabbitmq
       containers:
         - name: rabbitmq
           image: rabbitmq:3.13-management
           ports:
             - containerPort: 5672
             - containerPort: 15672
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq
+          # Il comando avvia ogni volta una piccola VM Erlang: col timeout di
+          # default (1s), quando il worker occupa la CPU caricando il modello,
+          # non risponde in tempo e Kubernetes riavvia RabbitMQ a vuoto.
           livenessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "-q", "ping"]
             initialDelaySeconds: 15
             periodSeconds: 10
+            timeoutSeconds: 15
+      volumes:
+        - name: rabbitmq-data
+          persistentVolumeClaim:
+            claimName: rabbitmq-pvc
 ---
 apiVersion: v1
 kind: Service

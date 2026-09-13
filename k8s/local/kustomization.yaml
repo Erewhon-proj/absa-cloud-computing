@@ -1,0 +1,9 @@
+# Manifest del deploy locale (modello mock). Il playbook li applica con
+# `kubectl kustomize`; il namespace invece lo crea Terraform (terraform/local).
+resources:
+  - 01-config.yaml
+  - 02-postgres.yaml
+  - 03-rabbitmq.yaml
+  - 04-api.yaml
+  - 05-worker.yaml
+  - 06-frontend.yaml

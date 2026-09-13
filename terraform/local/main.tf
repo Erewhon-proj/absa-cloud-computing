@@ -7,9 +7,16 @@ terraform {
   }
 }
 
+# Nome del cluster nel kubeconfig. OrbStack lo chiama "orbstack",
+# Docker Desktop "docker-desktop". Lo passa il playbook Ansible.
+variable "kube_context" {
+  type    = string
+  default = "orbstack"
+}
+
 provider "kubernetes" {
   config_path    = "~/.kube/config"
-  config_context = "orbstack" # Config di def. di OrbStack
+  config_context = var.kube_context
 }
 
 resource "kubernetes_namespace" "absa_cloud" {
