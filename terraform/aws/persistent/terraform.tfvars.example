@@ -1,9 +1,9 @@
 # Copia in terraform.tfvars.
 aws_region          = "eu-west-1"
 project             = "absa"
-# Deve essere GLOBALMENTE unico su tutto S3:
-model_bucket_name   = "absa-model-checkpoint-XXXX"
-budget_notify_email = "dario.lazzara@studium.unict.it"
+# Deve essere GLOBALMENTE unico su tutto S3, e uguale a quello dello stack compute:
+model_bucket_name   = "absa-model-checkpoint-CAMBIAMI"
+budget_notify_email = "nome.cognome@dominio"
 budget_limit        = "100"
 budget_currency     = "USD"
 github_repo         = "owner/nome-repo"

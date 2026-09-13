@@ -1,6 +1,6 @@
 ---
 # Configurazione e deploy su AWS (Fase B).
-# Presuppone che gli stack Terraform siano gia' applicati:
+# Presuppone che gli stack Terraform siano già applicati:
 #   terraform/aws/persistent  (S3, ECR, Budgets)
 #   terraform/aws/compute      (VPC, EKS, RDS, SQS, IRSA, KEDA)
 # Legge gli output Terraform, renderizza l'overlay k8s/aws e fa il deploy.
@@ -17,18 +17,15 @@
 
   vars:
     project_root: "{{ playbook_dir }}/../.."
-    image_tag: "latest" # la CI usa il git SHA; in locale "latest"
-    # -e build_images=false se la CI ha gia' pubblicato :latest su ECR
-    # (vedi .github/workflows/ci.yml): salta la rebuild locale, utile per il
-    # giorno della demo se il push automatico e' andato a buon fine.
+    image_tag: "latest"
+    # -e build_images=false se la CI ha già pubblicato :latest su ECR
     build_images: true
     upload_model: false
-    model_local_path: "{{ project_root }}/../absa-trustpilot-banking/models/best_models/lcf_atepc_custom_dataset_cdw_apcacc_89.41_apcf1_69.72_atef1_69.94"
+    model_local_path: "{{ project_root }}/models/lcf_atepc_custom_dataset_cdw_apcacc_89.41_apcf1_69.72_atef1_69.94"
 
   tasks:
     # Modulo dedicato (read-only): esegue `terraform output` e restituisce gli
-    # output gia' strutturati in .outputs.<nome>.value. Niente parsing di stringhe
-    # ne' changed_when: leggere non modifica lo stato, il modulo lo sa gia'.
+    # output già strutturati in .outputs.<nome>.value.
     - name: Leggi gli output Terraform (stack compute)
       cloud.terraform.terraform_output:
         project_path: "{{ project_root }}/terraform/aws/compute"
@@ -39,6 +36,7 @@
         project_path: "{{ project_root }}/terraform/aws/persistent"
       register: tf_persistent
 
+      # Salviamo i valori estratti nel task precedente per un facile accesso
     - name: Costruisci le variabili di deploy
       set_fact:
         cluster_name: "{{ tf_compute.outputs.cluster_name.value }}"
@@ -53,6 +51,7 @@
         # Es. 123456789012.dkr.ecr.eu-west-1.amazonaws.com/absa-api -> ...amazonaws.com
         ecr_registry: "{{ tf_persistent.outputs.ecr_repository_urls.value['absa-api'].split('/')[0] }}"
 
+        # Variabili per k8s
     - name: Ambiente per il rendering dei manifest (placeholder ${...})
       set_fact:
         deploy_env:
@@ -66,13 +65,13 @@
           IMAGE_WORKER: "{{ ecr_urls['absa-worker'] }}:{{ image_tag }}"
           IMAGE_FRONTEND: "{{ ecr_urls['absa-frontend'] }}:{{ image_tag }}"
 
+          # Per far puntare kube al cluster appena creato
     - name: Aggiorna kubeconfig per il cluster EKS
       command: aws eks update-kubeconfig --name {{ cluster_name }} --region {{ region }}
       changed_when: false
 
-    # Build & push su ECR. Senza questo passo le repo ECR restano vuote e i pod
-    # vanno in ImagePullBackOff: e' lo stesso lavoro della CI ad ogni push su
-    # main, ma qui il deploy dev'essere autosufficiente anche senza pipeline.
+    # Build & push su ECR.
+    # È lo stesso lavoro della CI ad ogni push su main.
     - name: Login a ECR
       shell: |
         set -euo pipefail
@@ -83,9 +82,8 @@
       when: build_images | bool
       changed_when: false
 
-    # --platform linux/amd64: il Mac e' ARM, i nodi EKS sono x86. Senza questo
-    # flag l'immagine parte in locale ma sul cluster va in CrashLoopBackOff.
-    # INSTALL_ML sul solo worker: e' l'unico che carica PyABSA (immagine ~3 GB).
+    # --platform linux/amd64 per allinearsi  ai nodi EKS che sono x86 a differenza dei sistemi ARM
+    # INSTALL_ML sul solo worker: è l'unico che carica PyABSA (immagine ~3 GB).
     - name: Build & push delle immagini su ECR
       shell: |
         set -euo pipefail
@@ -120,6 +118,7 @@
         - 02-serviceaccounts.yaml
       changed_when: true
 
+      # K8s esegue direttamente l'init essendo che rds è in una subnet privata
     - name: Crea la ConfigMap con lo schema SQL (da db/init.sql)
       shell: |
         set -euo pipefail
@@ -130,10 +129,12 @@
         executable: /bin/bash
       changed_when: true
 
+      # Cancellare la vecchia esecuzione in favore di quella nuova
     - name: Reset del Job db-init (campi immutabili sui re-run)
       command: kubectl delete job db-init -n absa-cloud --ignore-not-found
       changed_when: false
 
+      # Pod temporaneo per la creazione delle tabelle
     - name: Applica il Job di init schema su RDS
       command: kubectl apply -f "{{ project_root }}/k8s/aws/06-db-init-job.yaml"
       changed_when: true
