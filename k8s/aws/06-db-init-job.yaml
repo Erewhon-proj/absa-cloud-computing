@@ -1,7 +1,6 @@
-# Inizializza lo schema su RDS. RDS e' in subnet privata (non raggiungibile dal
-# portatile): il Job gira DENTRO il cluster, che invece la raggiunge.
-# Lo script init.sql arriva dalla ConfigMap db-init-sql, creata a deploy-time da
-# db/init.sql (vedi ansible/aws e la CI). Idempotente: usa CREATE TABLE IF NOT EXISTS.
+# Inizializza lo schema su RDS. RDS in subnet privata (non raggiungibile)
+# motivo per cui il Job girerà DENTRO il cluster.
+# Lo script init.sql arriva dalla ConfigMap db-init-sql
 apiVersion: batch/v1
 kind: Job
 metadata:

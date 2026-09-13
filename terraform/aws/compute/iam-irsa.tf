@@ -51,7 +51,7 @@ resource "aws_iam_role_policy" "api_sqs" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["sqs:SendMessage", "sqs:GetQueueUrl", "sqs:GetQueueAttributes"]
+      Action   = ["sqs:SendMessage", "sqs:GetQueueUrl", "sqs:GetQueueAttributes"] # azioni permesse
       Resource = aws_sqs_queue.reviews.arn
     }]
   })

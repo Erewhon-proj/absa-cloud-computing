@@ -13,7 +13,7 @@ module "vpc" {
 
   enable_nat_gateway   = true
   single_nat_gateway   = true
-  enable_dns_hostnames = true
+  enable_dns_hostnames = true # assegnazione automatica da aws
 
   # Tag richiesti da EKS per l'auto-discovery delle subnet da parte dei Load Balancer.
   public_subnet_tags = {

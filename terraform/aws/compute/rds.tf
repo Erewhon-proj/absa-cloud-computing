@@ -1,9 +1,10 @@
-# PostgreSQL gestito (RDS), in subnet privata, single-AZ per contenere i costi.
+# PostgreSQL gestito (RDS), in subnet privata, single-AZ.
 resource "aws_db_subnet_group" "this" {
   name       = "${var.project}-db-subnets"
   subnet_ids = module.vpc.private_subnets
 }
 
+# Security Group
 resource "aws_security_group" "rds" {
   name        = "${var.project}-rds-sg"
   description = "Accesso PostgreSQL dai nodi EKS"
@@ -14,9 +15,10 @@ resource "aws_security_group" "rds" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = [module.vpc.vpc_cidr_block]
+    cidr_blocks = [module.vpc.vpc_cidr_block] # apre le porte agli ip interni della nostra vpc
   }
 
+  # Config default traffico in uscito
   egress {
     from_port   = 0
     to_port     = 0
@@ -29,7 +31,7 @@ resource "aws_db_instance" "postgres" {
   identifier     = "${var.project}-postgres"
   engine         = "postgres"
   engine_version = "16"
-  instance_class = var.db_instance_class
+  instance_class = var.db_instance_class #db.t3.micro
 
   allocated_storage = 20
   storage_encrypted = true
@@ -43,5 +45,5 @@ resource "aws_db_instance" "postgres" {
 
   multi_az            = false
   publicly_accessible = false
-  skip_final_snapshot = true
+  skip_final_snapshot = true # Nessun backup prima del destroy
 }

@@ -1,4 +1,4 @@
-# Coda principale + Dead Letter Queue. 
+# Coda principale + Dead Letter Queue.
 # La lunghezza della coda principale è la metrica che KEDA usa per scalare i worker (0 -> N).
 resource "aws_sqs_queue" "dlq" {
   name                      = "${var.project}-reviews-dlq"
@@ -7,7 +7,7 @@ resource "aws_sqs_queue" "dlq" {
 
 resource "aws_sqs_queue" "reviews" {
   name                       = "${var.project}-reviews"
-  visibility_timeout_seconds = 300 # 5 minuti
+  visibility_timeout_seconds = 300    # 5 minuti
   message_retention_seconds  = 345600 # 4 giorni
 
   redrive_policy = jsonencode({

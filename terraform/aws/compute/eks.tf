@@ -1,4 +1,4 @@
-# Cluster EKS gestito con un node group di sole istanze CPU (vincolo budget).
+# Cluster EKS gestito con un node group di sole istanze CPU.
 # Il modulo crea l'OIDC provider necessario a IRSA (enable_irsa di default).
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
@@ -7,12 +7,16 @@ module "eks" {
   cluster_name    = var.cluster_name
   cluster_version = var.kubernetes_version
 
+  # Creazione endpoint sicuro per l'accesso
   cluster_endpoint_public_access = true
 
   # Dà all'utente che esegue terraform i permessi admin sul cluster (kubectl).
   enable_cluster_creator_admin_permissions = true
 
-  vpc_id     = module.vpc.vpc_id
+  # Collegamento alla nostr vpc
+  vpc_id = module.vpc.vpc_id
+
+  # I nodi si avviano dentro la sub privata -> nessun ip pubblico
   subnet_ids = module.vpc.private_subnets
 
   eks_managed_node_groups = {

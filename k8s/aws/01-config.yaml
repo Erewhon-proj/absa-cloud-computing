@@ -1,6 +1,5 @@
-# Overlay AWS (Fase B). I valori ${...} vengono risolti a deploy-time da
-# scripts/render_manifest.py (vedi ansible/aws e .github/workflows).
-# Backend coda = SQS, DB = RDS.
+# I valori ${...} vengono risolti a deploy-time da
+# scripts/render_manifest.py.
 apiVersion: v1
 kind: ConfigMap
 metadata:

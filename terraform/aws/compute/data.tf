@@ -1,9 +1,9 @@
+# Elenco dei datacennter attivi -> prendi i primi due
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Il bucket del modello e' gestito dallo stack "persistent": qui lo referenziamo
-# solo per ricavarne l'ARN (policy IRSA del worker).
+# Salva l'ARN del bucket per il worker
 data "aws_s3_bucket" "model" {
   bucket = var.model_bucket_name
 }

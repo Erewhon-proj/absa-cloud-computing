@@ -4,6 +4,5 @@
 #   ansible-galaxy collection install -r ansible/aws/requirements.yml
 collections:
   # Modulo terraform_output: legge gli output Terraform in modo dichiarativo
-  # (usato in playbook.yml al posto di `command: terraform output -json`).
   - name: cloud.terraform
     version: ">=2.0.0"
