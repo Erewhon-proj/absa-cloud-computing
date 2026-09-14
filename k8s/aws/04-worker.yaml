@@ -4,7 +4,7 @@ metadata:
   name: worker
   namespace: absa-cloud
 spec:
-  # Le repliche sono gestite da KEDA (0 -> N). Il valore qui e' solo iniziale.
+  # Le repliche sono gestite da KEDA (0 -> N). Il valore qui è solo iniziale.
   replicas: 0
   selector:
     matchLabels:
@@ -15,10 +15,11 @@ spec:
         app: worker
     spec:
       serviceAccountName: absa-worker
-      # initContainer: scarica il checkpoint da S3 nel volume condiviso, solo in
-      # modalita' pyabsa. $MODEL_MODE / $MODEL_BUCKET sono env RUNTIME (da
-      # absa-config), NON placeholder envsubst: per questo l'allowlist di
-      # envsubst non li include.
+
+      # 120s invece dei 30s di default così dà tempo al worker di completare
+      # il batch di inferenza prima di spegnersi.
+      terminationGracePeriodSeconds: 120
+
       initContainers:
         - name: model-download
           image: amazon/aws-cli:2.15.30
@@ -46,13 +47,9 @@ spec:
                 name: absa-config
             - secretRef:
                 name: absa-secret
-          # Sotto /app (WORKDIR): PyABSA risolve il checkpoint relativamente alla
-          # working directory, e con un path esterno fallisce il caricamento.
           volumeMounts:
             - name: model
               mountPath: /app/models/checkpoint
-          # Dimensionato per il modello reale: BERT-base in fp32 sono ~450 MB di
-          # pesi, piu' il runtime PyTorch e le attivazioni del batch.
           resources:
             requests:
               cpu: 500m
@@ -82,8 +79,11 @@ metadata:
 spec:
   scaleTargetRef:
     name: worker
-  minReplicaCount: 0 # scale-to-zero quando la coda e' vuota
-  maxReplicaCount: 5
+  minReplicaCount: 0 # scale-to-zero quando la coda è vuota
+  # Ogni worker chiede 500m di CPU: su un nodo da 2 vCPU ne entrano due.
+  # Con 3 nodi ne starebbero 6, ma a 4 ognuno ha più CPU a disposizione
+  # (in prova con 2 nodi il quinto restava Pending per CPU insufficiente).
+  maxReplicaCount: 4
   pollingInterval: 15
   # 5 minuti di coda vuota prima di tornare a zero. Il cold start di un worker
   # costa ~45s (immagine da 3 GB + checkpoint da S3 + BERT in RAM): con un
