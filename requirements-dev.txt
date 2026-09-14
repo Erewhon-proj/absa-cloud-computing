@@ -1,0 +1,11 @@
+# Dipendenze di sviluppo: test, coverage e linter.
+# in locale:
+#   python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+#
+# I test importano anche il codice di worker e API, quindi servono pure
+# services/worker/requirements.txt e services/api/requirements.txt.
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.7
+# Usata da scripts/load_test.py; stessa versione del frontend.
+requests==2.32.3

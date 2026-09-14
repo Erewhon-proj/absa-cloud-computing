@@ -1,0 +1,23 @@
+# Configurazione del linter
+#   ruff check .          controlla
+#   ruff check --fix .    corregge quello che sa correggere da solo
+# Gira anche in CI, nel job "lint" di .github/workflows/ci.yml.
+
+line-length = 100
+target-version = "py311" # la stessa delle immagini python:3.11-slim
+
+[lint]
+select = [
+    "E", # pycodestyle: errori di stile (righe lunghe, spaziature)
+    "W", # pycodestyle: warning (spazi a fine riga)
+    "F", # pyflakes: import inutilizzati, variabili non definite
+    "I", # isort: ordine e raggruppamento degli import
+    "B", # bugbear: errori logici ricorrenti (zip senza strict, raise senza from)
+    "UP", # pyupgrade: sintassi superata rispetto a Python 3.11
+    "BLE", # blind-except: except Exception che non logga e non rilancia
+    "RUF100", # segnala i "# noqa" rimasti lì senza più sopprimere niente
+]
+
+[lint.isort]
+# "app" è il package del worker
+known-first-party = ["app"]

@@ -1,21 +1,37 @@
 name: CI/CD Pipeline
 
-# Build & push delle 3 immagini su ECR ad ogni push su main. Il deploy sul
-# cluster (kubectl apply) resta un passo separato via `ansible-playbook
-# ansible/aws/playbook.yml`: il cluster EKS e' effimero (distrutto a fine
-# sessione), quindi un rollout automatico ad ogni commit scriverebbe quasi
-# sempre su un cluster che non esiste.
+# Build & push delle 3 immagini su ECR ad ogni push su main.
+# Il deploy sul cluster (kubectl apply) resta un passo separato via `ansible-playbook
+# ansible/aws/playbook.yml`
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # rilancio manuale dalla pagina Actions, senza nuovo commit
+  workflow_dispatch: # pulsante run worflow per il rilancio manuale
 
 env:
   AWS_REGION: eu-west-1
 
 jobs:
-  # Test unitari (logica del worker e rendering dei manifest): se falliscono,
-  # le immagini non vengono buildate ne' pubblicate.
+  # I tre controlli girano in parallelo; le immagini si buildano solo se
+  # passano tutti (vedi "needs" del job build-and-push).
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install -r requirements-dev.txt
+
+      - name: Run ruff
+        run: ruff check --output-format=github .
+
+  # Test unitari (logica del worker, mock di inferenza, rendering dei manifest).
   test:
     runs-on: ubuntu-latest
     steps:
@@ -28,16 +44,43 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r services/worker/requirements.txt pytest
+        run: >-
+          pip install -r services/worker/requirements.txt
+          -r services/api/requirements.txt -r requirements-dev.txt
 
       - name: Run tests
-        run: pytest -q tests/
+        run: pytest -q --cov=services/worker/app --cov=services/api/app --cov-report=term-missing tests/
+
+  # Controlli sull'infrastruttura: formattazione e correttezza sintattica dei
+  # tre stack. `validate` non contatta AWS, quindi non servono credenziali.
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Validate stacks
+        run: |
+          set -euo pipefail
+          for stack in local aws/persistent aws/compute; do
+            echo "--- terraform/$stack"
+            # -backend=false: scarica provider e moduli senza inizializzare
+            # nessuno stato remoto, che qui non serve e non esiste.
+            terraform -chdir="terraform/$stack" init -backend=false -input=false
+            terraform -chdir="terraform/$stack" validate
+          done
 
   build-and-push:
-    needs: test
+    needs: [ lint, test, terraform ]
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # per l'autenticazione OIDC verso AWS, nessuna chiave statica
+      id-token: write # abilitare la vm di github per l'autenticazione OIDC verso AWS
       contents: read
 
     steps:
@@ -54,11 +97,9 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # ubuntu-latest e' gia' x86_64, come i nodi EKS: nessun --platform da
-      # forzare qui (a differenza della build a mano su Mac, che e' ARM).
       - name: Build & push images to ECR
         env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }} #url ottenuto dal login precedente
           TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
