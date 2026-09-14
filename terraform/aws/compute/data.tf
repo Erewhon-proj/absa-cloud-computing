@@ -1,4 +1,4 @@
-# Elenco dei datacennter attivi -> prendi i primi due
+# Elenco dei datacenter attivi -> prendi i primi due
 data "aws_availability_zones" "available" {
   state = "available"
 }

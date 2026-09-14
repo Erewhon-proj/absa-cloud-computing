@@ -13,7 +13,7 @@ module "eks" {
   # Dà all'utente che esegue terraform i permessi admin sul cluster (kubectl).
   enable_cluster_creator_admin_permissions = true
 
-  # Collegamento alla nostr vpc
+  # Collegamento alla nostro vpc
   vpc_id = module.vpc.vpc_id
 
   # I nodi si avviano dentro la sub privata -> nessun ip pubblico

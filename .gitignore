@@ -1,6 +1,6 @@
 *.save
 
-# Compose lo carica in automatico: e' la configurazione locale di chi sviluppa
+# Compose lo carica in automatico: è la configurazione locale di chi sviluppa
 # (es. modello reale montato da fuori repo), non parte del progetto.
 docker-compose.override.yml
 

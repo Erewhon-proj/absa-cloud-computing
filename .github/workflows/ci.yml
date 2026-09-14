@@ -6,7 +6,7 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # pulsante run worflow per il rilancio manuale
+  workflow_dispatch: # pulsante run workflow per il rilancio manuale
 
 env:
   AWS_REGION: eu-west-1
