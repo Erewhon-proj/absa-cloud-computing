@@ -2,10 +2,8 @@
 """Risolve i placeholder ${VAR} di un manifest K8s con le variabili d'ambiente.
 
 Regola unica: ogni ${VAR} viene sostituito con la variabile d'ambiente omonima.
-Le variabili *runtime* dei container si scrivono SENZA graffe ($MODEL_MODE,
+Le variabili runtime dei container si scrivono SENZA graffe ($MODEL_MODE,
 $DATABASE_URL, ...)
-
-In breve: cerca il placeholder, chiede all'os se esiste e lo sostituisce
 
 Uso:
     cat k8s/aws/01-config.yaml | python3 scripts/render_manifest.py | kubectl apply -f -

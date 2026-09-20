@@ -24,7 +24,7 @@ FUSO_ORARIO = ZoneInfo("Europe/Rome")
 # Banche note (stesse di scripts/load_test.py); "Altra..." abilita input libero.
 BANKS = ["Fineco", "Revolut", "BBVA", "Intesa", "Unicredit", "N26"]
 
-# Colori fissi per i tre sentiment: gli stessi in chip, grafici e legenda.
+# Colori fissi per i tre sentiment: gli stessi in grafici e legenda.
 SENTIMENT_COLORS = {
     "Positive": "#3FB68B",
     "Negative": "#E4604E",
@@ -33,7 +33,7 @@ SENTIMENT_COLORS = {
 
 st.set_page_config(page_title="ABSA Banking", page_icon="🏦", layout="wide")
 
-# Ritocchi estetici: chip colorate per gli aspetti e header più compatto.
+# Ritocchi estetici per gli aspetti e header più compatto.
 st.markdown(
     """
     <style>
@@ -66,8 +66,6 @@ def sentiment_chip(aspect: str, sentiment: str, confidence: float | None) -> str
     """HTML di una chip colorata 'aspetto · sentiment (confidenza)'."""
     color = SENTIMENT_COLORS.get(sentiment, "#8A93A6")
     conf = f" <small>{confidence:.0%}</small>" if confidence is not None else ""
-    # escape: l'aspetto è testo estratto dalla recensione dell'utente e questa
-    # stringa viene resa con unsafe_allow_html
     return f'<span class="chip" style="background:{color}">{html.escape(aspect)}{conf}</span>'
 
 

@@ -14,8 +14,7 @@ spec:
             - name: model
               mountPath: /app/models/checkpoint
               readOnly: true
-          # Col modello in memoria il worker usa circa 1,2 GB, con picchi vicini
-          # a 2 GB mentre lo carica: col limite del mock (512Mi) verrebbe ucciso.
+          # Col modello in memoria il worker usa circa 1,2 GB, con picchi vicini ai 2 GB.
           resources:
             requests:
               cpu: 500m
@@ -40,10 +39,7 @@ metadata:
   namespace: absa-cloud
 spec:
   # Ogni worker tiene in RAM una copia del modello (~2 GB mentre la carica).
-  # Con 4 GB assegnati a Docker ne entra uno solo: provato con due, la
-  # memoria finisce e si riavviano anche RabbitMQ e Postgres. Con più RAM si
-  # può alzare.
   maxReplicaCount: 1
-  # Caricare il modello richiede decine di secondi, meglio non spegnere il
+  # Caricare il modello richiede decine di secondi, è opportuno non spegnere il
   # worker appena la coda si svuota.
   cooldownPeriod: 120

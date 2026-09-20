@@ -1,4 +1,4 @@
-# Inizializza lo schema su RDS. RDS in subnet privata (non raggiungibile)
+# Inizializza lo schema su RDS, in quanto in subnet privata (non raggiungibile)
 # motivo per cui il Job girerà DENTRO il cluster.
 # Lo script init.sql arriva dalla ConfigMap db-init-sql
 apiVersion: batch/v1

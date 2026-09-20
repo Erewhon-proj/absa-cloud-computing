@@ -14,10 +14,9 @@ spec:
       labels:
         app: worker
     spec:
-      # Il worker esce da solo su SIGTERM, ma solo dopo aver finito e confermato
-      # il batch in corso: col mock bastano pochi secondi (col modello reale
-      # k8s/local-pyabsa lo porta a 120). Se il grace period scade prima, il
-      # kubelet manda SIGKILL e il batch va perso a metà.
+      # Tempo per consentire al worker di completare il batch in corso prima dello spegnimento.
+      # Evita che Kubernetes forzi l'uscita con SIGKILL interrompendo l'elaborazione a metà.
+      # Per il mock bastano 60 secondi, mentre con il modello reale (k8s/local-pyabsa) viene esteso a 120.
       terminationGracePeriodSeconds: 60
       containers:
         - name: worker

@@ -41,8 +41,8 @@ def create_review(review: ReviewIn):
     try:
         publish({"review_id": review_id})
     except Exception:
-        # Senza messaggio in coda nessuno la elaborerebbe: la tolgo dal DB,
-        # così non resta 'pending' per sempre, e il client può riprovare.
+        # Senza messaggio in coda nessuno la elaborerebbe: si rimuove dal DB,
+        # così non resta 'pending' per sempre ed il client può riprovare.
         logger.exception("Pubblicazione in coda fallita per %s", review_id)
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -84,8 +84,6 @@ def get_review(review_id: str):
     try:
         uuid.UUID(review_id)
     except ValueError:
-        # from None: il ValueError di uuid.UUID è un dettaglio interno,
-        # fuori resta solo il 404.
         raise HTTPException(status_code=404, detail="Review not found") from None
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT * FROM reviews WHERE id = %s", (review_id,))

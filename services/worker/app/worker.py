@@ -40,43 +40,45 @@ RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 # --- SQS (Fase B) ---
 SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL", "")
 AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
-# Deve superare il tempo massimo di elaborazione di un batch (load modello + inferenza CPU).
+# Tempo concesso per elaborare un batch prima che SQS riconsegni i messaggi (5 minuti)
 SQS_VISIBILITY_TIMEOUT = int(os.getenv("SQS_VISIBILITY_TIMEOUT", "300"))
-# Attesa dopo un errore transitorio di receive_message, prima di riprovare.
+# Secondi di attesa prima di riprovare se la lettura da SQS fallisce
 SQS_ERROR_BACKOFF = int(os.getenv("SQS_ERROR_BACKOFF", "5"))
 
-# Un "handle" è il delivery_tag (RabbitMQ) o il ReceiptHandle (SQS): l'identificatore
-# che serve al backend per confermare (ack/delete) un messaggio elaborato.
+# Un handle è l'identificativo univoco del messaggio usato dalla coda per confermarlo
 
-# Alzato dal gestore di SIGTERM; i loop di consumo lo controllano dopo ogni flush.
+
+# Flag per lo spegnimento pulito. Diventa True quando Kubernetes chiede di fermare il pod.
 _shutdown = False
 
 
 def _request_shutdown(signum, _frame) -> None:
-    """Gestore di SIGTERM, il segnale con cui Kubernetes ferma un pod.
+    """Intercetta il segnale SIGTERM inviato da Kubernetes quando vuole spegnere il pod.
 
-    Nel container il worker è PID 1, e per PID 1 il kernel non applica le azioni
-    di default dei segnali: senza questo gestore SIGTERM viene ignorato, il
-    kubelet aspetta il grace period e chiude con SIGKILL (uscita 137, pod in
-    "Error", batch interrotto a metà e messaggi riconsegnati). Qui alziamo solo
-    un flag: il batch in corso viene finito e confermato prima di uscire.
+    Invece di interrompere brutalmente il processo a metà lavoro, impostiamo solo questo flag.
+    In questo modo il worker conclude il batch di recensioni che sta già elaborando,
+    salva i risultati nel database ed esce in modo ordinato senza perdere dati.
     """
     global _shutdown
     _shutdown = True
-    logger.info("Ricevuto segnale %d: esco dopo il batch in corso", signum)
+    logger.info(
+        "Ricevuto segnale di terminazione %d, il worker uscirà al termine del batch corrente",
+        signum,
+    )
+
 
 
 def process_batch(batch: list[tuple]) -> list:
-    """Elabora un batch di recensioni: estrae dal DB, fa inferenza, salva i risultati.
+    """Elabora un gruppo di recensioni estraendole dal database ed eseguendo l'inferenza.
 
-    `batch` è una lista di (handle, review_id). Restituisce la lista degli
-    `handle` da confermare: chi chiama li conferma a modo suo (ack su RabbitMQ,
-    delete su SQS), così questa funzione non conosce il backend.
+    Riceve una lista di coppie (identificatore del messaggio, id recensione).
+    Restituisce la lista degli identificatori completati, così chi chiama la funzione
+    può confermarli sulla coda corretta (ack su RabbitMQ o delete su SQS).
 
-    Errori durante inferenza o salvataggio: le recensioni vengono marcate 'error' e i
-    messaggi confermati comunque (niente loop su "poison message"). Se invece
-    fallisce l'accesso al DB stesso, l'eccezione si propaga SENZA restituire
-    handle -> riconsegna (e DLQ su SQS dopo N tentativi).
+    Se l'inferenza fallisce, le recensioni vengono impostate sullo stato error nel database
+    e i messaggi vengono comunque confermati per non bloccare la coda con dati non validi.
+    Se invece il database è irraggiungibile, l'errore viene propagato per consentire
+    la riconsegna automatica del messaggio.
     """
     if not batch:
         return []
@@ -92,7 +94,6 @@ def process_batch(batch: list[tuple]) -> list:
                 (review_ids,),
             )
             rows = cur.fetchall()
-            # dizionario uuid : testo della recensione
             id_to_text = {str(row["id"]): row["text"] for row in rows}
 
             valid_ids = list(id_to_text.keys())
@@ -100,11 +101,10 @@ def process_batch(batch: list[tuple]) -> list:
                 cur.execute(
                     "UPDATE reviews SET status = 'processing' WHERE id = ANY(%s::uuid[])",
                     (valid_ids,),
-                ) # passano in processing
+                )
 
         texts = []
-        # Divide i messaggi: quelli con una review nel DB vanno elaborati; quelli
-        # "orfani" (review sparita) li confermiamo e basta, ritentarli non serve.
+        # Se una recensione non esiste nel database la confermiamo subito per toglierla dalla coda
         for handle, r_id in batch:
             if r_id in id_to_text:
                 valid_batch.append((handle, r_id))
@@ -148,10 +148,8 @@ def process_batch(batch: list[tuple]) -> list:
 
     except Exception:
         logger.exception("Errore durante l'elaborazione del batch")
-        # Registra l'errore e conferma i messaggi per
-        # evitare loop "poison message". Se anche questo fallisce, l'eccezione
-        # si propaga e i messaggi NON vengono confermati -> riconsegna.
-        # Setta su error e fornisce l'ack
+        # In caso di errore segniamo le recensioni come error nel database
+        # e confermiamo i messaggi per evitare che vengano ritentati all'infinito
         valid_rids = [r_id for _, r_id in valid_batch]
         if valid_rids:
             with get_conn() as conn, conn.cursor() as cur:
@@ -163,6 +161,7 @@ def process_batch(batch: list[tuple]) -> list:
         return to_ack
 
 
+
 # --------------------------------------------------------------------------- #
 # Backend RabbitMQ (Fase A)
 # --------------------------------------------------------------------------- #
@@ -170,7 +169,7 @@ def connect_with_retry(max_attempts: int = 30):
     import pika
 
     params = pika.URLParameters(RABBITMQ_URL)
-    params.heartbeat = 0  # niente heartbeat: l'inferenza può bloccare a lungo
+    params.heartbeat = 0  # Disattiviamo l'heartbeat per evitare disconnessioni durante l'inferenza
     params.blocked_connection_timeout = 300
     for attempt in range(1, max_attempts + 1):
         try:
@@ -184,7 +183,7 @@ def connect_with_retry(max_attempts: int = 30):
 def consume_rabbitmq() -> None:
     connection = connect_with_retry()
     channel = connection.channel()
-    channel.queue_declare(queue=QUEUE_NAME, durable=True) # se esiste non fa nulla
+    channel.queue_declare(queue=QUEUE_NAME, durable=True)
     channel.basic_qos(prefetch_count=BATCH_SIZE)
 
     logger.info(
@@ -205,16 +204,16 @@ def consume_rabbitmq() -> None:
                     logger.exception("Messaggio non valido: %r", body)
                     channel.basic_ack(delivery_tag=method_frame.delivery_tag)
 
-            # Flush se il batch è pieno, se è scattato il timeout di inattività
-            # o se dobbiamo chiudere (in quel caso svuotiamo prima di uscire).
+            # Elabora se il batch è pieno, se sono passati 2 secondi o se il pod si sta spegnendo
             if batch and (len(batch) >= BATCH_SIZE or method_frame is None or _shutdown):
                 try:
-                    # process_batch torna gli handle finiti: qui li confermiamo (ack).
+                    # Conferma i messaggi completati con successo su RabbitMQ
                     for tag in process_batch(batch):
                         channel.basic_ack(delivery_tag=tag)
                 except Exception:
                     logger.exception("Batch fallito; i messaggi verranno riconsegnati")
                 batch.clear()
+
 
             if _shutdown:
                 break
@@ -235,16 +234,14 @@ def consume_sqs() -> None:
     max_msgs = min(BATCH_SIZE, 10)  # SQS consente al massimo 10 messaggi per receive
 
     def delete(handles: list) -> None:
-        # Su SQS "confermare" un messaggio significa cancellarlo. delete_message_batch
-        # accetta al massimo 10 entry per chiamata, quindi procediamo a blocchi di 10.
+        # Su SQS confermare un messaggio equivale a cancellarlo dalla coda
         for i in range(0, len(handles), 10):
             chunk = handles[i:i + 10]
             entries = [
                 {"Id": str(j), "ReceiptHandle": h} for j, h in enumerate(chunk)
             ]
             resp = sqs.delete_message_batch(QueueUrl=SQS_QUEUE_URL, Entries=entries)
-            # La chiamata può fallire parzialmente senza sollevare eccezioni:
-            # le entry fallite verranno riconsegnate (elaborazione idempotente).
+            # Se la cancellazione fallisce, il messaggio verrà riconsegnato ed elaborato di nuovo
             failed = resp.get("Failed", [])
             if failed:
                 logger.warning(
@@ -262,15 +259,15 @@ def consume_sqs() -> None:
             resp = sqs.receive_message(
                 QueueUrl=SQS_QUEUE_URL,
                 MaxNumberOfMessages=max_msgs,
-                WaitTimeSeconds=20,  # long polling: meno richieste vuote, meno costo
+                WaitTimeSeconds=20,  # Long polling di 20 secondi per ridurre chiamate e costi
                 VisibilityTimeout=SQS_VISIBILITY_TIMEOUT,
             )
         except Exception:
-            # Errore transitorio (throttling SQS, blip IAM/rete): non far morire il
-            # worker (evita CrashLoopBackOff di massa), attendi un attimo e riprova.
+            # In caso di errore temporaneo di rete attendiamo qualche secondo prima di riprovare
             logger.exception("receive_message fallita; nuovo tentativo tra %ds", SQS_ERROR_BACKOFF)
             time.sleep(SQS_ERROR_BACKOFF)
             continue
+
 
         messages = resp.get("Messages", [])
         if not messages:
@@ -295,9 +292,9 @@ def consume_sqs() -> None:
 
 
 def main() -> None:
-    # Registrato qui e non a livello di modulo: importare il worker (i test lo
-    # fanno) non deve cambiare la gestione dei segnali del processo chiamante.
+    # Registriamo il gestore di spegnimento prima di iniziare ad ascoltare la coda
     signal.signal(signal.SIGTERM, _request_shutdown)
+
     if QUEUE_BACKEND == "sqs":
         consume_sqs()
     else:

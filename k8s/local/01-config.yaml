@@ -11,7 +11,7 @@ data:
   FLUSH_TIMEOUT: "2.0"
   # Costo simulato di un batch di inferenza, in secondi (solo per MODEL_MODE=mock).
   # Senza, il mock è talmente veloce che un worker basta sempre e KEDA non scala
-  # mai oltre 1: serve a rendere osservabile l'autoscaling in locale. "0" lo spegne.
+  # mai oltre 1: serve a rendere osservabile l'autoscaling in locale.
   MOCK_DELAY: "2"
 ---
 apiVersion: v1

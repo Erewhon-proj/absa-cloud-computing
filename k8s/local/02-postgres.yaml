@@ -17,9 +17,10 @@ metadata:
   namespace: absa-cloud
 spec:
   replicas: 1
-  # Recreate e non RollingUpdate: il PVC è ReadWriteOnce, quindi un secondo pod
-  # non riuscirebbe a montarlo finché il primo è vivo e l'aggiornamento
-  # resterebbe bloccato. Qui il vecchio pod muore prima che nasca il nuovo.
+  # Usiamo Recreate invece di RollingUpdate perché il volume è ReadWriteOnce
+  # Poiché il disco può essere montato da un solo pod alla volta, con RollingUpdate
+  # il nuovo pod resterebbe bloccato in attesa che il vecchio liberi il volume.
+  # Con Recreate il vecchio pod viene prima spento e poi viene avviato quello nuovo.
   strategy:
     type: Recreate
   selector:

@@ -30,9 +30,7 @@ spec:
         app: rabbitmq
     spec:
       # RabbitMQ salva i dati in una cartella che ha il nome del nodo
-      # (rabbit@<hostname>). In un Deployment l'hostname del pod cambia a ogni
-      # riavvio, quindi senza fissarlo il nuovo pod aprirebbe una cartella vuota
-      # e le code durable andrebbero perse lo stesso, volume o no.
+      # (rabbit@<hostname>).
       hostname: rabbitmq
       containers:
         - name: rabbitmq
@@ -43,9 +41,10 @@ spec:
           volumeMounts:
             - name: rabbitmq-data
               mountPath: /var/lib/rabbitmq
-          # Il comando avvia ogni volta una piccola VM Erlang: col timeout di
-          # default (1s), quando il worker occupa la CPU caricando il modello,
-          # non risponde in tempo e Kubernetes riavvia RabbitMQ a vuoto.
+
+          # Timeout esteso a 15 secondi per evitare falsi allarmi.
+          # Il comando di ping avvia un processo Erlang che potrebbe richiedere qualche secondo
+          # in più quando il worker satura la CPU per caricare il modello PyTorch.
           livenessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "-q", "ping"]

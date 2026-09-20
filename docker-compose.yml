@@ -55,7 +55,7 @@ services:
       QUEUE_NAME: absa.reviews
       # Euristica a parole chiave. Per il modello reale: docker-compose.pyabsa.yml
       MODEL_MODE: mock
-      # MOCK_DELAY: "2"         # costo simulato per batch, per vedere lo scaling
+      MOCK_DELAY: "2"         # costo simulato per batch, per vedere lo scaling
     depends_on:
       postgres:
         condition: service_healthy

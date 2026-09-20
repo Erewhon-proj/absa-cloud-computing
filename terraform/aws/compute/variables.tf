@@ -22,10 +22,9 @@ variable "node_instance_type" {
   type        = string
   default     = "m7i-flex.large"
   description = <<-EOT
-    Solo CPU (vincolo budget: niente GPU). 2 vCPU / 8 GiB: la RAM serve per il
-    modello reale (BERT + PyTorch), e ci stanno due worker per nodo.
-    Deve essere free-tier eligible: l'account è sul piano Free, che rifiuta
-    gli altri con "instance type is not eligible for Free Tier".
+    2 vCPU / 8 GiB - la RAM serve per il modello reale (BERT + PyTorch), 
+    e ci stanno due worker per nodo.
+    Deve essere free-tier eligible.
   EOT
 }
 

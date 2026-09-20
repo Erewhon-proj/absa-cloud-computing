@@ -8,8 +8,7 @@
     # Come in ansible/aws: il percorso parte dalla cartella del playbook,
     # così si può lanciare da qualsiasi directory.
     project_root: "{{ playbook_dir }}/../.."
-    # Cluster su cui installare. Terraform e kubectl devono usare lo stesso,
-    # altrimenti con il kubeconfig ancora su EKS si installerebbe tutto lì.
+    # Cluster su cui installare.
     # Con Docker Desktop: -e kube_context=docker-desktop
     kube_context: orbstack
     # "mock" oppure "pyabsa" per il modello reale: -e model_mode=pyabsa
@@ -28,7 +27,7 @@
         fail_msg: "model_mode deve essere mock oppure pyabsa, non '{{ model_mode }}'"
 
     # Senza questo controllo il worker partirebbe lo stesso e, non trovando il
-    # modello, userebbe il mock senza che nessuno se ne accorga.
+    # modello, userebbe direttamente il mock.
     - name: Check that the model checkpoint exists
       stat:
         path: "{{ model_dir }}/lcf_atepc.state_dict"
@@ -49,9 +48,8 @@
       register: provision
       changed_when: "'0 added, 0 changed, 0 destroyed' not in provision.stdout"
 
-    # Il tag è sempre :latest: se cambia solo il codice il manifest resta uguale,
-    # kubectl apply non vede differenze e i pod continuano col codice vecchio.
-    # Salvo l'ID delle immagini prima e dopo la build per sapere quali riavviare.
+      # Salva gli ID attuali delle immagini per individuare quelle modificate dopo la compilazione
+      # Disattiva i metadati temporali di buildx per mantenere invariato l'ID se il codice non cambia
     - name: Read image IDs before the build
       command: docker images -q absa-{{ item }}:latest
       loop: "{{ services }}"
@@ -84,8 +82,8 @@
       register: install_keda
       changed_when: "'configured' in install_keda.stdout or 'created' in install_keda.stdout"
 
-    # Lo schema esiste solo in db/init.sql: la ConfigMap si genera da lì, come
-    # in ansible/aws, così non c'è una seconda copia da tenere allineata.
+
+      # Crea la ConfigMap direttamente da db/init.sql come unica sorgente per lo schema del database
     - name: Create the SQL schema ConfigMap from db/init.sql
       shell: |
         set -euo pipefail
@@ -99,8 +97,7 @@
 
     # Niente Ingress: i Service sono LoadBalancer e OrbStack li espone già su localhost.
     # k8s/local-pyabsa riusa i manifest di k8s/local cambiando solo il worker.
-    # render_manifest.py inserisce il percorso del checkpoint, che deve essere
-    # assoluto e senza "..": per questo realpath.
+    # render_manifest.py inserisce il percorso del checkpoint.
     - name: Apply Kubernetes Manifests
       shell: |
         set -euo pipefail
@@ -115,19 +112,15 @@
       register: k8s_apply
       changed_when: "'configured' in k8s_apply.stdout or 'created' in k8s_apply.stdout"
 
-    # Solo i deployment la cui immagine è cambiata. Il worker a zero repliche si
-    # può riavviare lo stesso: i pod che KEDA creerà dopo useranno l'immagine nuova.
-    - name: Restart deployments with a new image
+      # Riavvia esclusivamente i deployment la cui immagine Docker è stata ricompilata
+    - name: Restart deployments with a new image 
       command: kubectl --context "{{ kube_context }}" -n absa-cloud rollout restart deployment/{{ item.0.item }}
       loop: "{{ images_before.results | zip(images_after.results) | list }}"
       loop_control:
         label: "{{ item.0.item }}"
       when: item.0.stdout != item.1.stdout
 
-    # rollout status e non "wait pod": dopo un riavvio per qualche secondo ci sono
-    # sia il pod vecchio che quello nuovo, e aspetta che il nuovo sia pronto.
-    # Il worker non compare nel loop in quanto con KEDA a minReplicaCount=0 e coda
-    # vuota può essere già a zero repliche
+      # Attende il rollout dei servizi principali (il worker è escluso perché gestito da KEDA a zero repliche)
     - name: Wait for Deployments to be ready
       command: kubectl --context "{{ kube_context }}" -n absa-cloud rollout status deployment/{{ item }} --timeout=90s
       loop:

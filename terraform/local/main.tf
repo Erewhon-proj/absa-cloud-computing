@@ -1,3 +1,6 @@
+# Configurazione Terraform per l'ambiente locale (Fase A)
+# Crea il namespace dedicato sul cluster Kubernetes locale
+
 terraform {
   required_providers {
     kubernetes = {
@@ -7,8 +10,7 @@ terraform {
   }
 }
 
-# Nome del cluster nel kubeconfig. OrbStack lo chiama "orbstack",
-# Docker Desktop "docker-desktop". Lo passa il playbook Ansible.
+# Contesto Kubernetes locale (es. orbstack, docker-desktop o minikube)
 variable "kube_context" {
   type    = string
   default = "orbstack"
@@ -19,6 +21,7 @@ provider "kubernetes" {
   config_context = var.kube_context
 }
 
+# Namespace per isolare tutte le risorse del progetto
 resource "kubernetes_namespace" "absa_cloud" {
   metadata {
     name = "absa-cloud"
@@ -28,3 +31,4 @@ resource "kubernetes_namespace" "absa_cloud" {
     }
   }
 }
+

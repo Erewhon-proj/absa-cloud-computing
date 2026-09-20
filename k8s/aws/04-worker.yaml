@@ -82,11 +82,10 @@ spec:
   minReplicaCount: 0 # scale-to-zero quando la coda è vuota
   # Ogni worker chiede 500m di CPU: su un nodo da 2 vCPU ne entrano due.
   # Con 3 nodi ne starebbero 6, ma a 4 ognuno ha più CPU a disposizione
-  # (in prova con 2 nodi il quinto restava Pending per CPU insufficiente).
   maxReplicaCount: 4
   pollingInterval: 15
   # 5 minuti di coda vuota prima di tornare a zero. Il cold start di un worker
-  # costa ~45s (immagine da 3 GB + checkpoint da S3 + BERT in RAM): con un
+  # costa ~45s (immagine da 3 GB + checkpoint da S3 + BERT in RAM) quindi con un
   # cooldown troppo corto lo si ripaga a ogni singola recensione.
   cooldownPeriod: 300
   triggers:
