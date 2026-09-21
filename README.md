@@ -27,7 +27,7 @@ terraform/         local/ per il namespace, aws/ per la parte cloud
 ansible/           playbook che fanno build e deploy
 scripts/           load test e script di supporto
 tests/             test con pytest
-docs/              schema e slide del progetto
+docs/              relazione e schemi dell'architettura
 ```
 
 Il worker ha due modalità, scelte con `MODEL_MODE`:
