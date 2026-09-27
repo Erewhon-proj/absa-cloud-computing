@@ -24,7 +24,7 @@ echo ">> Rimuovo il namespace (deployment, service, PVC e dati locali)"
 kubectl delete namespace absa-cloud --ignore-not-found --wait=true
 
 echo ">> Distruggo il namespace gestito da Terraform"
-terraform -chdir=terraform/local destroy -auto-approve
+terraform -chdir=terraform/local destroy -auto-approve -var "kube_context=$CONTESTO"
 
 # KEDA lo installa il playbook con kubectl apply, quindi Terraform non lo vede.
 echo ">> Disinstallo KEDA"

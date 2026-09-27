@@ -225,11 +225,19 @@ dopo circa 30 secondi.
 ### Spegnere
 
 ```bash
-terraform -chdir=terraform/local destroy -var kube_context=orbstack
+./scripts/local_teardown.sh
 ```
 
-Cancellare il namespace elimina anche tutto quello che c'è dentro (pod, database,
-coda). KEDA resta installato nel cluster.
+Lo script cancella il namespace, e con lui tutto quello che c'è dentro (pod,
+database, coda), poi distrugge lo stack Terraform, disinstalla KEDA, ferma
+l'eventuale stack Compose e rimuove le immagini del progetto con la cache di
+build.
+
+Per una pulizia parziale, che lascia KEDA e le immagini nel cluster:
+
+```bash
+terraform -chdir=terraform/local destroy -var kube_context=orbstack
+```
 
 ## Modello reale
 
