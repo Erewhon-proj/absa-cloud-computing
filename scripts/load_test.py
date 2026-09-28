@@ -5,9 +5,13 @@ Sotto Kubernetes/ASG questo carico fa crescere la coda e innesca lo scaling.
 
 Uso:
     python scripts/load_test.py --url http://localhost:8000 --n 200 --concurrency 20
+
+Senza --url cerca il cluster EKS tra i context di kubectl e usa il LoadBalancer
+dell'API; se non lo trova usa localhost.
 """
 import argparse
 import random
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -38,12 +42,32 @@ def send_one(url: str) -> int:
     return r.status_code
 
 
+def find_url() -> str:
+    try:
+        contexts = subprocess.run(["kubectl", "config", "get-contexts", "-o", "name"],
+                                  capture_output=True, text=True).stdout.split()
+        eks = [c for c in contexts if c.endswith("cluster/absa-cluster")]
+        if eks:
+            host = subprocess.run(
+                ["kubectl", "--context", eks[0], "-n", "absa-cloud", "get", "svc", "api",
+                 "-o", "jsonpath={.status.loadBalancer.ingress[0].hostname}"],
+                capture_output=True, text=True).stdout.strip()
+            if host:
+                return f"http://{host}:8000"
+    except FileNotFoundError:
+        pass
+    return "http://localhost:8000"
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--url", default="http://localhost:8000")
+    parser.add_argument("--url")
     parser.add_argument("--n", type=int, default=200)
     parser.add_argument("--concurrency", type=int, default=20)
     args = parser.parse_args()
+    if not args.url:
+        args.url = find_url()
+    print("Invio a", args.url)
 
     start = time.time()
     ok = 0
