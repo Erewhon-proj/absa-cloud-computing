@@ -8,8 +8,13 @@ Uso:
 
 Senza --url cerca il cluster EKS tra i context di kubectl e usa il LoadBalancer
 dell'API; se non lo trova usa localhost.
+
+Di default pesca a caso tra le 10 recensioni di esempio qui sotto. Con
+--csv file.csv (colonne bank,text) usa invece le recensioni del file, senza
+ripetizioni.
 """
 import argparse
+import csv
 import random
 import subprocess
 import time
@@ -33,11 +38,20 @@ SAMPLES = [
 ]
 
 
-def send_one(url: str) -> int:
-    payload = {
-        "text": random.choice(SAMPLES),
-        "bank": random.choice(BANKS),
-    }
+def build_payloads(n: int, csv_path: str | None) -> list[dict]:
+    if not csv_path:
+        return [{"text": random.choice(SAMPLES), "bank": random.choice(BANKS)}
+                for _ in range(n)]
+
+    with open(csv_path, encoding="utf-8") as f:
+        reviews = [{"text": r["text"], "bank": r["bank"]} for r in csv.DictReader(f)]
+    random.shuffle(reviews)
+    if n > len(reviews):
+        print(f"Nel file ci sono solo {len(reviews)} recensioni: ne invio {len(reviews)}")
+    return reviews[:n]
+
+
+def send_one(url: str, payload: dict) -> int:
     r = requests.post(f"{url}/reviews", json=payload, timeout=15)
     return r.status_code
 
@@ -64,15 +78,19 @@ def main():
     parser.add_argument("--url")
     parser.add_argument("--n", type=int, default=200)
     parser.add_argument("--concurrency", type=int, default=20)
+    parser.add_argument("--csv", help="file con colonne bank,text")
     args = parser.parse_args()
     if not args.url:
         args.url = find_url()
     print("Invio a", args.url)
 
+    payloads = build_payloads(args.n, args.csv)
+    args.n = len(payloads)
+
     start = time.time()
     ok = 0
     with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        futures = [pool.submit(send_one, args.url) for _ in range(args.n)]
+        futures = [pool.submit(send_one, args.url, p) for p in payloads]
         for fut in as_completed(futures):
             try:
                 if fut.result() == 202:
